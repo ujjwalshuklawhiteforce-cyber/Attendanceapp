@@ -1,0 +1,1533 @@
+import React, { useEffect, useMemo, useRef, useState, } from "react";
+import { Alert, BackHandler, Vibration,  Image, Animated, View, Modal, Pressable,  TouchableOpacity, Dimensions, PanResponder, } from 'react-native';
+import LottieView from "lottie-react-native";
+// import { Tooltip } from "react-native-paper";
+import { Tooltip } from "@rneui/base";
+import moment from"moment"
+// import Icon, { IconType } from "react-native-dynamic-vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
+import crea yles from "./HomeScreen.style";
+import RNBounceable from "@freakycoder/react-native-bounceable";
+import { useTheme } from "@react-navigation/native";
+import Text from "@shared-components/text-wrapper/TextWrapper";
+import { ScreenHeight, ScreenWidth } from "@freakycoder/react-native-helpers";
+// import { StyleSheet } from "react-native";
+import ReactNativeBiometrics from "react-native-biometrics";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Progress from "react-native-progress";
+import Orientation from 'react-native-orientation-locker';
+import {
+  requestCameraPermission,
+  requestLocationPermission,
+} from "@services/event-emitter/permission";
+import GetLocation from 'react-native-get-location';
+import { RefreshControl, ScrollView } from "react-native-gesture-handler";
+import { useAuth } from "context/AuthContext"; 
+import * as NavigationService from "react-navigation-helpers";
+import { SCREENS } from "@shared-constants";
+import AwesomeCamera from "@shared-components/camera/CameraCapture";
+import { useLoader } from "context/LoaderContext";
+import axios from "axios";
+import { getDistance } from 'geolib';
+
+// import { screensEnabled } from "react-native-screens";
+
+// const profileURI =
+//   // eslint-disable-next-line max-len
+//   "https://images.unsplash.com/photo-1544568100-847a948585b9?ixlib=rb-1.2.1&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2574&q=80";
+
+const HomeScreen: React.FC = () => {
+  const { userInfo} = useAuth();
+ const {setIsLoading}=useLoader()
+  // const imagesource=parseData.data.data?.image;
+  // const user_id=parseData.data.user_id;
+  const theme = useTheme();
+  const { colors } = theme;
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const [modalVisible, setModalVisible] = useState(false);
+   const [modalVisible1, setModalVisible1] = useState(false);
+   const [modalVisible2, setModalVisible2] = useState(false);
+   const [visibleTooltip, setVisibleTooltip] = useState(null);
+   const[checkedout,setcheckedout]=useState(false)
+  const [imagesource, setimagesource]=useState()
+  const [username,setusername]=useState()
+// const [showmessage,setshowmessage]=useState<any>(false)
+const [isDisabled, setIsDisabled] = useState(false); // Disable button
+  const [locationName, setLocationName] = useState<any>(null);
+  const [weekDays, setWeekDays] = useState<any>([]);
+  const [addressLoading, setIsAddressLoading] = useState<any>();
+// const [checkin ,setcheckin]=useState<any>();
+const [activity,setactivity]=useState<any>(false)
+const [checkintime ,setcheckintime]=useState <any>()
+const[checkouttime,setcheckouttime]=useState<any>()
+const [punching,setpunching]=useState<any>()
+// const[isdisabled,setdisabled]=useState(false)
+  const flatListRef = useRef<any>(null);
+  const [isCheckedIn, setIsCheckedIn] = useState(false); 
+  const [loader,setloader]=useState(false);
+  const [attendancedata,setattendancedata]=useState(true)
+  const [distance, setdistance] = useState("");
+const[modalopen,setmodalopen]=useState(false);
+const [progress, setProgress] = useState(0);
+const[locationdata,setloctiondata]=useState(false)
+const [bgColor, setBgColor] = useState("rgb(29,91,65)");
+  const [showCamera, setShowCamera] = useState<boolean>(false);
+  const [currentTime, setCurrentTime] = useState("");
+  const [date, setdate]=useState<string>("")
+  const parseData = JSON.parse(userInfo || "{}");
+  const [refreshing, setRefreshing] = useState(false);
+  const [mapmodalVisible, setmapModalVisible] = useState(false);
+ 
+const userid=parseData?.data?.data?.user_id
+  const user_id = parseData["data"]?.user_id? parseData["data"]?.user_id:userid ;
+  const data= JSON.parse(userInfo? userInfo:{});
+  const uname = data?.data?.data?.name;
+const imagese=data.data?.data?.image;
+const allowedLocation = {
+  latitude:  23.1667,    // Replace with your fixed lat
+  longitude:79.9500 ,   // Replace with your fixed lon
+};
+const fullName = username || parseData["data"]?.name || '';
+const [firstName, ...rest] = fullName.trim().split(' ');
+const lastName = rest.join(' ');
+const allowedRadius = 100;
+const handleBiometricAuth = async () => {
+  const rnBiometrics = new ReactNativeBiometrics();
+
+  try {
+    const { available, biometryType } = await rnBiometrics.isSensorAvailable();
+
+    if (available) {
+      console.log(`Biometric type: ${biometryType}`);
+
+      const resultObject = await rnBiometrics.simplePrompt({
+        promptMessage: 'Authenticate with fingerprint',
+      });
+
+      if (resultObject.success) {
+        handleSetIsOpen(true);
+      } else {
+        // Alert.alert('Authentication failed', 'Please try again.');
+      }
+    } else {
+      // If biometric not available, proceed anyway
+      handleSetIsOpen(true);
+    }
+  } catch (error) {
+    // Alert.alert('Error', 'Biometric authentication failed.');
+  }
+};
+
+  // const handleBiometricAuth = async () => {
+  //   const rnBiometrics = new ReactNativeBiometrics();
+
+  //   // Check if biometric authentication is available
+  //   const { available, biometryType } = await rnBiometrics.isSensorAvailable();
+
+  //   if (available) {
+  //     console.log(`Biometric type: ${biometryType}`);
+      
+  //     rnBiometrics
+  //       .simplePrompt({ promptMessage: 'Authenticate with fingerprint ' })
+  //       .then((resultObject) => {
+  //         const { success } = resultObject;
+
+  //         if (success) {
+  //           handleSetIsOpen(true);
+  //         } else {
+  //           Alert.alert('Authentication failed', 'Please try again.');
+  //         }
+  //       })
+  //       .catch(() => {
+  //         Alert.alert('Error', 'Biometric authentication failed.');
+  //       });
+  //   } else {
+  //     // Alert.alert('Error', 'Biometric authentication not supported.');
+  //   }
+  // };
+  const handleTooltipPress = (key) => {
+    setVisibleTooltip((prev) => (prev === key ? null : key));
+  };
+  const updateTime = () => {
+    const now = new Date();
+    let hours = now.getHours();
+    const minutes = now.getMinutes();
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12 || 12; // Convert 24-hour time to 12-hour time
+    const formattedTime = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+    
+    setCurrentTime(formattedTime); // Set current time
+  
+    // Call startCountdown here, after checkintime is fetched and set
+    // if (checkintime) {
+    //   startCountdown(checkintime, checkouttime);
+    // }
+
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const date = now.getDate();
+    const monthName = monthNames[now.getMonth()];
+    const year = now.getFullYear();
+    const datedetails = `${date} ${monthName} ${year}`;
+    setdate(datedetails); // Set current date
+  };
+  
+  // const [imageSource, setImageSource] = useState('');
+  const screenWidth = Dimensions.get("window").width;
+  const swipeThreshold = screenWidth * 0.7; // 70% of screen width
+
+  const translateX = useRef(new Animated.Value(0)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant() {
+        setBgColor("rgb(1, 17, 10)")
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dx > 0) {
+          translateX.setValue(gestureState.dx);
+         
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dx >= swipeThreshold) {
+          Animated.timing(translateX, {
+            toValue: screenWidth * 0.8,
+            duration: 200,
+            useNativeDriver: false,
+          }).start(() => {
+            setSwiped(true);
+            setTimeout(() => {
+              // setModalVisible(false);
+              translateX.setValue(0);
+            
+   
+              setSwiped(false);
+              // alert("Confirmed!");
+             
+                // showmessage? handleSubmitMain():""
+                console.log("show message",showmessage)
+             
+               
+                // setIsCameraVisible(true);
+              
+  
+             
+            
+              if(activity){
+              // start..........................
+              setdisabled(true)
+            
+              
+          //  end...........................
+               
+          handlePermission();
+                // console.log("duration",time)
+                // console.log("what you have remaining", punchingduration)
+          
+              }
+              else{
+          
+          
+              }
+                setShowCamera(true);
+                handleSetIsOpen(true)
+                setactivity(!activity)
+setmodalopen(false)
+setBgColor("rgb(29,91,65)"); 
+            }, 500);
+          });
+        } else {
+          Animated.spring(translateX, {
+            toValue: 0,
+            useNativeDriver: false,
+          }).start();
+          setBgColor("rgb(29,91,65)"); 
+        }
+      },
+    })
+  ).current;
+
+
+  
+  // Function to check if user can perform actions
+
+
+  
+
+  // const CheckInOutComponent = ({ user_id, isCheckedIn, locationName }) => {
+  //   const [progress, setProgress] = useState(0);
+  
+    const submitCheckInOut = async (path) => {
+      const apiUrl = "https://whiteforcepayroll.com/admin/api/checkInOut";
+  
+      const date = new Date();
+      const months = [
+        "January", "February", "March", "April", "May", "June", "July",
+        "August", "September", "October", "November", "December",
+      ];
+      const month = months[date.getMonth()];
+      const day = date.getDate();
+      const year = date.getFullYear();
+      const time = date.toLocaleTimeString(); // Fix: Get proper time
+  
+      const params = {
+        user_id: user_id,
+        date:"1/01/2024",
+        image: `${path}`, // Assuming path is base64 encoded image
+        geolocation: `${locationName}`, // Example location
+        type: isCheckedIn ? "0" : "1", // "0" for check-out, "1" for check-in
+        location_tracking: [
+          { time: `${time}`, location: `${locationName}` },
+          { time: `${time}`, location: `${locationName}` },
+        ],
+      };
+  
+      try {
+        const response = await axios.post(apiUrl, params, {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          onUploadProgress: (progressEvent) => {
+            const percentCompleted = Math.round((progressEvent.loaded / progressEvent.total ) * 99);
+            setProgress(percentCompleted);
+          },
+        });
+  
+        if (response.status !== 200) {
+          Alert.alert("Error", `HTTP Status: ${response.status}`);
+          return;
+        
+        }
+  
+        console.log("Response Body:", response.data);
+        setloader(false)
+
+        if (params.type === "1") {
+          // Check-in logic
+         setloader(false)
+         setModalVisible(true)
+          setIsCheckedIn(true);
+          setcheckintime(time);
+          await AsyncStorage.setItem("checkInData", JSON.stringify({
+            date: `${day}, ${month} ${year}`,
+            time,
+            type: "Check-In",
+          }));
+          await AsyncStorage.setItem("checkinStatus", JSON.stringify(true));
+  
+        } else if (params.type === "0") {
+          setloader(false)
+          setModalVisible1(true)
+          // Check-out logic
+          setIsDisabled(true)
+          setIsCheckedIn(false);
+          setcheckouttime(time)
+          await AsyncStorage.setItem("checkOutData", JSON.stringify({
+            date: `${day}, ${month} ${year}`,
+            time,
+            type: "Check-Out",
+            timestamp: Date.now(),
+          }));
+          // await AsyncStorage.setItem("checkoutDate", new Date().toTimeString());
+          await AsyncStorage.setItem("checkinStatus", JSON.stringify(false));
+        }
+  
+        // setProgress(100); // Ensure it reaches 100% after completion
+  
+      } catch (error) {
+        console.error("Error:", error);
+        Alert.alert("Error", error.message);
+        setloader(false)
+
+      }
+      finally{
+        setProgress(100);
+
+      }
+    };
+
+  
+
+  // Function to retrieve check-in and check-out data
+  const getCheckInOutData = async () => {
+    try {
+      const checkInData = await AsyncStorage.getItem("checkInData");
+      const checkOutData = await AsyncStorage.getItem("checkOutData");
+  
+      if (checkInData) {
+        console.log("Retrieved Check-In Data:", JSON.parse(checkInData));
+        const checkindata = JSON.parse(checkInData);
+        // setcheckintime(checkindata.time);
+        
+        // Add 9 hours to the check-in time and start the countdown
+        // startCountdown(checkindata.time);
+      }
+      if (checkOutData) {
+        console.log("Retrieved Check-Out Data:", JSON.parse(checkOutData));
+        const checkoutdata = JSON.parse(checkOutData);
+        // setcheckouttime(checkoutdata.time);
+      }
+    } catch (error) {
+      console.error("Failed to fetch check-in/check-out data:", error);
+    }
+  };
+
+  
+  
+
+  const [isOpen, setIsOpen] = useState(false);
+
+  const handleSetIsOpen = (open: boolean) => {
+    setIsOpen(open);
+  };
+  const fetchFaceDetails = async (date: string) => {
+    try {
+      const user =user_id;
+      const payload = {
+        user_id: user,
+        date: date,
+      };
+    
+      let faceDetailsResponse;
+      
+      try {
+        // Attempt to fetch data from API
+        faceDetailsResponse = await axios.post(
+          "https://whiteforcepayroll.com/admin/api/getDateAttendance",
+        payload
+        );
+        console.log("payload",payload)
+  setattendancedata(false)
+        // Extract data from response
+        const { attandance, in: checkInTime, out: checkOutTime } = faceDetailsResponse.data.data;
+        const faceDetails = {
+          checkInTime,
+          checkOutTime,
+        };
+  
+        // Save data to AsyncStorage
+        await AsyncStorage.setItem("@faceDetails", JSON.stringify(faceDetails));
+      } catch (apiError) {
+        console.warn("API request failed, loading stored data:", apiError);
+      }
+  
+      // Get stored data (either from API or fallback to AsyncStorage)
+      const storedDetails = await AsyncStorage.getItem("@faceDetails");
+      if (!storedDetails) {
+        console.warn("No data available from API or AsyncStorage.");
+        return;
+      }
+  
+      const { checkInTime, checkOutTime } = JSON.parse(storedDetails);
+      console.log("Check-In Time:", checkInTime);
+      console.log("Check-Out Time:", checkOutTime);
+  
+      if (checkOutTime) {
+        const timeMoment = moment(checkInTime, "h:mm A");
+        const time2Moment = moment(checkOutTime, "h:mm A");
+  
+        const checkinout = moment.duration(timeMoment.diff(time2Moment));
+        let hours = Math.floor(Math.abs(checkinout.asHours()));
+        let minutes = Math.abs(checkinout.minutes());
+        const formattedTime = `${hours}h ${minutes}m`;
+  
+        console.log("hours", hours, "minutes", minutes);
+        setpunching(formattedTime);
+        setIsDisabled(true);
+        setcheckouttime(checkOutTime);
+        setcheckintime(checkInTime);
+      } else if (checkInTime) {
+        setIsCheckedIn(true);
+        setcheckintime(checkInTime);
+      } else {
+        setIsCheckedIn(false);
+        setcheckintime(null);
+      }
+    } catch (err) {
+      console.error("Unexpected error fetching face details:", err);
+    }
+  };
+  
+
+  
+  
+
+    const getAddressFromCoordinates = async (latitude, longitude) => {
+      console.log("latitude", latitude)
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`);
+        const data = await response.json();
+        
+        if (data && data.address) {
+          // console.log("all data",data)
+          return data.address;
+        } else {
+          throw new Error('No address found');
+        }
+      } catch (error) {
+        console.error('Error fetching address:', error);
+        return null;
+      }
+    };
+       const fetchStatus = async () => {
+      try {
+        const status = await AsyncStorage.getItem(' ');
+        if (status !== null) {
+          setIsCheckedIn(JSON.parse(status)); // Convert string back to boolean
+        }
+      } catch (error) {
+        console.error('Failed to load status from AsyncStorage:', error);
+      }
+    };
+  useEffect(() => {
+ 
+   setIsLoading(false)
+  // setLoaderWithMinDelay(200)
+    const currentDate = new Date;
+    const year = currentDate.getFullYear();
+  const month = String(currentDate.getMonth() + 1).padStart(2, '0'); // Months are zero-based
+  const day = String(currentDate.getDate()).padStart(2, '0');
+  const date= `${year}-${month}-${day}`;
+  console.log("dateeeeeeee",date)
+   fetchFaceDetails(date)
+// const loadStatus = async () => {
+//   try {
+//     const storedStatus = await AsyncStorage.getItem("checkinStatus");
+//     const storedDate = await AsyncStorage.getItem("checkoutDate");
+   
+
+//     // Check if the storedDate is not null and not equal to today's date
+//     if (storedDate !== currentDate && storedDate !== null) {
+//       // Clear the previous day's data if the storedDate is different from today
+//       await AsyncStorage.removeItem("checkInData");
+//       await AsyncStorage.removeItem("checkOutData");
+//       await AsyncStorage.removeItem("checkinStatus");
+//       await AsyncStorage.removeItem("checkoutDate");
+//       setcheckintime("");
+//       setcheckouttime("");
+//     }
+
+//     // Set the check-in status if available
+//     if (storedStatus !== null) {
+//       setIsCheckedIn(JSON.parse(storedStatus));
+//     }
+
+//     // Disable the button if already checked out today
+//     if (storedDate === currentDate) {
+//       // setIsDisabled(true);
+//     }
+//   } catch (error) {
+//     console.error("Failed to load status:", error);
+//   }
+// };
+
+// loadStatus();
+
+   
+
+     setimagesource(imagese);
+  setusername(uname);
+    getCheckInOutData()
+   
+   
+ 
+    fetchStatus()
+
+    // Update time every second
+    updateTime();
+    const intervalId = setInterval(updateTime, 1000); // Update every second
+   
+  
+    // Log information
+    console.log("Camera is shown:", showCamera);
+    // console.log("User ID:", JSON.stringify(imagedetails));
+    // console.log("All stored data:", parseData);
+    
+    console.log("This is my current location:", locationName);
+  
+    setIsAddressLoading(true);
+    Orientation.lockToPortrait(); // Change to lockToLandscape() for landscape mode
+    
+    // Back button handler
+    const backAction = () => {
+      return false; // Prevent default back action
+    };
+  
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      backAction
+    );
+  
+
+ 
+  requestLocationPermission().then(async (res) => {
+    if (res) {
+      const options = {
+        enableHighAccuracy: true,
+        timeout: 60000,
+        maximumAge: 1000,
+      };
+  
+      try {
+        const position = await GetLocation.getCurrentPosition(options);
+        const { latitude, longitude } = position;
+  
+        await AsyncStorage.setItem("latitude", JSON.stringify(latitude));
+        await AsyncStorage.setItem("longitude", JSON.stringify(longitude));
+  
+        const address = await getAddressFromCoordinates(latitude, longitude);
+        console.log("long",longitude,"lat",latitude)
+        if (address) {
+          const county = address.county || '';
+          const city = address.city || '';
+          setLocationName(`${county}, ${city}`);
+          console.log("Address info:", county, city);
+        }
+        const distance = getDistance(
+          { latitude, longitude },
+          allowedLocation
+        );
+  
+        // Alert.alert(`distance allowed ${distance}meters`);
+  
+        if (distance <= allowedRadius) {
+          // Alert.alert("✅ You are within the check-in zone.");
+          // Allow check-in/check-out
+        } else {
+        setmapModalVisible(true)
+         const readableDistance = formatDistance(distance);
+         const noDecimal = Math.floor(readableDistance); // Output: 12
+
+setloctiondata(true)
+          console.warn("❌ Outside check-in zone.",);
+                  setdistance(`${readableDistance}`)
+          // Alert.alert(`distance is ${distance} meter to punch in` );
+          // Disable or block check-in
+        }
+        setIsAddressLoading(false);
+      } catch (error) {
+        console.error("Location Error:", error.message, error);
+        setIsAddressLoading(false);
+      }
+    }
+  });
+   getCheckInOutData()
+    // Other actions
+    getWeekDays();
+    scrollToActiveItem();
+  
+    // Cleanup on unmount
+    return () => {
+      Orientation.unlockAllOrientations();
+      clearInterval(intervalId); // Clear the interval
+      backHandler.remove(); // Remove back button listener
+    };
+  }, []);
+const formatDistance = (meters) => {
+  return meters >= 1000
+    ? `${Math.floor(meters / 1000)} km`
+    : `${Math.floor(meters)} m`;
+};
+
+  const handlePermission = async () => {
+    if (
+      (await requestCameraPermission()) &&
+      (await requestLocationPermission()) 
+      // (await requestCalendarPermission())
+    ) {
+      // cam(true);
+    } else {
+      // setIsCameraVisible(false);
+      setIsDisabled(true)
+    }
+  };
+     const onRefresh = () => {
+    setRefreshing(true);
+    // Simulate a network request (e.g., API call)
+    setTimeout(() => {
+     fetchStatus()
+     handlePermission()
+        setIsLoading(false)
+    // setIsAddressLoading(true);
+
+       requestLocationPermission().then(async (res) => {
+    if (res) {
+      const options = {
+        enableHighAccuracy: true,
+        timeout: 60000,
+        maximumAge: 1000,
+      };
+  
+      try {
+        const position = await GetLocation.getCurrentPosition(options);
+        const { latitude, longitude } = position;
+  
+        await AsyncStorage.setItem("latitude", JSON.stringify(latitude));
+        await AsyncStorage.setItem("longitude", JSON.stringify(longitude));
+  
+        const address = await getAddressFromCoordinates(latitude, longitude);
+        console.log("long",longitude,"lat",latitude)
+        if (address) {
+          const county = address.county || '';
+          const city = address.city || '';
+          setLocationName(`${county}, ${city}`);
+          console.log("Address info:", county, city);
+        }
+        const distance = getDistance(
+          { latitude, longitude },
+          allowedLocation
+        );
+  
+        // Alert.alert(`distance allowed ${distance}meters`);
+  
+        if (distance <= allowedRadius) {
+          // Alert.alert("✅ You are within the check-in zone.");
+          // Allow check-in/check-out
+        } else {
+              const readableDistance = formatDistance(distance);
+setloctiondata(true)
+
+          console.warn("❌ Outside check-in zone.",);
+                  setdistance(`${readableDistance}`)
+
+          // Alert.alert(`distance is ${distance} meter to punch in` );
+          // Disable or block check-in
+        }
+        setIsAddressLoading(false);
+      } catch (error) {
+        console.error("Location Error:", error.message, error);
+        setIsAddressLoading(false);
+      }
+    }
+  });
+      // Refresh logic here (e.g., re-fetch data)
+      setRefreshing(false);
+    }, 2000); // Wait 2 seconds
+  };
+
+  const getWeekDays = () => {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const today = new Date();
+
+    // Get the first day (Sunday) of the current week
+    const firstDayOfWeek = new Date(today);
+    firstDayOfWeek.setDate(today.getDate() - today.getDay());
+
+    const weekdays = [];
+
+    for (let i = 0; i < 7; i++) {
+      const currentDay = new Date(firstDayOfWeek);
+      currentDay.setDate(firstDayOfWeek.getDate() + i);
+
+      const dayName = days[currentDay.getDay()];
+      const dayDate = currentDay.getDate(); // Get only the date
+      const isActive = currentDay.getDay() === today.getDay(); // Mark the current weekday as active
+
+      weekdays.push({
+        date: dayDate,
+        day: dayName,
+        isActive: isActive || false,
+      });
+    }
+    setWeekDays(weekdays);
+  };
+
+  const scrollToActiveItem = () => {
+    const activeIndex = weekDays.findIndex((item: any) => item.isActive);
+    if (activeIndex !== -1 && flatListRef.current) {
+      flatListRef.current.scrollToIndex({ index: activeIndex });
+    }
+  };
+  
+  /* -------------------------------------------------------------------------- */
+  /*                               Render Methods                               */
+  /* -------------------------------------------------------------------------- */
+
+
+  const renderHeader = () => (
+    <ScrollView   contentContainerStyle={{}}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }>
+      <View style={styles.header}>
+        <View style={styles.profileDetailContainer}>
+        {/* {renderNotifiButton()} */}
+       
+          <View style={styles.profileInfo}>
+         
+            <Text color={"black"} style={{fontSize:screenWidth*0.068,fontWeight:"bold", textTransform:"capitalize"}}>
+             
+           Hey {firstName} !
+            </Text>
+            {/* <Text>Hy good morning  have a nice day</Text> */}
+            {addressLoading == true ? (
+              // <Text
+              //   color={colors.subtitleSecond}
+              //   style={styles.profileInfoSubTitle}
+              // >
+             
+              // </Text>
+             <LottieView
+      source={require('../../assets/images/camera/loader.json')}
+      autoPlay
+      loop
+      style={{ width: 30, height: 30 }}
+    />
+            ) : (
+
+              <Text color=" rgb(29,91,65)"
+
+                // color={colors.subtitleSecond}
+                style={styles.profileInfoSubTitle}
+              >
+                {locationName}
+              </Text>
+            )}
+            
+          </View>
+        </View>
+        <RNBounceable
+            onPress={() => {
+              NavigationService.navigate(SCREENS.PROFILE);
+            }}
+          >
+            <Image
+              resizeMode="cover"
+              source={{ uri:imagesource?imagesource: parseData["data"]?.image }}
+              style={styles.profilePicImageStyle}
+            />
+          </RNBounceable>
+       
+      </View>
+      {/* start...... new */}
+      <View style={{margin:screenWidth*0.06, flexDirection:"column", justifyContent:"center", alignItems:"center"}}>
+      <Text  color="black"style={{fontSize:55 ,color:"black"}}>{currentTime}</Text>
+      <Text color="black" style={{fontSize:17 }}>{date}</Text>
+      </View>
+      <View style={{justifyContent: 'center',
+    alignItems: 'center',
+    marginTop:screenWidth*0.1,}}>
+
+      <View style={{ 
+    
+    padding:screenWidth*0.05,
+    borderRadius: ScreenWidth*1,
+    // width:'auto'
+
+    backgroundColor: isDisabled?'#edcece':'#E1E1E1',
+   }}
+    >
+     <TouchableOpacity  disabled={locationdata}>
+       <TouchableOpacity   onPress={()=>{ 
+        if(isDisabled){
+          setcheckedout(true)
+          Vibration.vibrate(300)
+        }
+        else{
+
+          Vibration.vibrate(100)
+          handleBiometricAuth()
+          // handleSetIsOpen(true)
+        }
+        // setmodalopen(true)
+      }} style={{  width: ScreenHeight*0.2,
+    height: ScreenHeight*0.2,
+    borderRadius: screenWidth*1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#DDE5E5',
+    elevation: 5, 
+    shadowColor: 'black', 
+    shadowOffset: { width: screenWidth*0.09, height: ScreenHeight*0.09 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    borderWidth: screenWidth*0.04,
+    borderColor: '#ffff', 
+    }}
+    disabled={attendancedata}
+    >
+
+        { isDisabled? <Image style={{width:40,height:50}} source={require("../../assets/images/camera/checkout.png")}/>:isCheckedIn? <Image style={{width:40,height:50}} source={require("../../assets/images/camera/checkout.png")}/>: <Image style={{width:40,height:50}} source={require("../../assets/images/camera/tap.png")}/>}
+        <Text color={ isDisabled?"#B62020":isCheckedIn?"#B62020":"green"} style={{fontSize:16,  marginTop:ScreenHeight*0.01, fontWeight:"700"}}>
+        {
+isDisabled?"Checked Out": 
+   isCheckedIn 
+    ? "Check-Out" 
+    : "Check-In"
+} 
+        </Text>
+      </TouchableOpacity>
+     </TouchableOpacity>
+      </View>
+      </View>
+      <View style={{
+        marginTop:ScreenHeight*0.1,display:"flex",flexDirection:"row", justifyContent:"space-around", alignItems:"center" ,width:"100%"}} >
+    {/* <Tooltip
+      visible={visibleTooltip==='checkin'} 
+      onClose={() => setVisibleTooltip(null)}
+      popover={ <View style={{  maxWidth: 200 }}>
+      <Text color="white" style={{ color: 'white', maxWidth: 200  }}>
+        Your check-in time
+      </Text>
+    </View>}
+      backgroundColor="rgb(29,91,65)"
+
+    >
+      <TouchableOpacity onPress={() => handleTooltipPress('checkin')}>
+        <View style={{ justifyContent: "center", flexDirection: "column", alignItems: "center" }}>
+          <Image
+            style={{ width: 25, height: 25 }}
+            source={require("../../assets/images/camera/history.png")}
+          />
+          <Text
+            style={{
+              marginTop: ScreenHeight * 0.02,
+              marginBottom: ScreenHeight * 0.01,
+              fontSize: 15,
+              fontWeight: "600",
+              color: "black"
+            }}
+          >
+            {checkintime ? checkintime : "-- + --"}
+          </Text>
+          <Text style={{ color: "black" }}>Checkin Time</Text>
+        </View>
+      </TouchableOpacity>
+    </Tooltip> */}
+    {visibleTooltip === 'checkin' ? (
+  <Tooltip
+    visible={true}
+    onClose={() => setVisibleTooltip(null)}
+    popover={
+      <View style={{ maxWidth: 200 }}>
+        <Text color="white" style={{ color: 'white' }}>Your check-in time</Text>
+      </View>
+    }
+    backgroundColor="rgb(29,91,65)"
+  >
+    <TouchableOpacity onPress={() => handleTooltipPress('checkin')}>
+      <View style={{ justifyContent: "center", flexDirection: "column", alignItems: "center" }}>
+        <Image style={{ width: 25, height: 25 }} source={require("../../assets/images/camera/history.png")} />
+        <Text style={{ marginTop: ScreenHeight * 0.02, marginBottom: ScreenHeight * 0.01, fontSize: 15, fontWeight: "600", color: "black" }}>
+          {checkintime ? checkintime : "-- + --"}
+        </Text>
+        <Text style={{ color: "black" }}>Checkin Time</Text>
+      </View>
+    </TouchableOpacity>
+  </Tooltip>
+) : (
+  <TouchableOpacity onPress={() => handleTooltipPress('checkin')}>
+    <View style={{ justifyContent: "center", flexDirection: "column", alignItems: "center" }}>
+      <Image style={{ width: 25, height: 25 }} source={require("../../assets/images/camera/history.png")} />
+      <Text style={{ marginTop: ScreenHeight * 0.02, marginBottom: ScreenHeight * 0.01, fontSize: 15, fontWeight: "600", color: "black" }}>
+        {checkintime ? checkintime : "-- + --"}
+      </Text>
+      <Text style={{ color: "black" }}>Checkin Time</Text>
+    </View>
+  </TouchableOpacity>
+)}
+
+{/* <View style={{justifyContent:"center",flexDirection:"column", alignItems:"center"}} >
+<Image style={{width:25,height:25}} source={require("../../assets/images/camera/historys.png")}/>
+<Text  color="black"style={{marginTop:ScreenHeight*0.02,marginBottom:ScreenHeight*0.01}}>
+{checkouttime?checkouttime:"-- + --"}
+</Text>
+<Text color="black">Checkout Time</Text>
+</View> */}
+{visibleTooltip === 'checkout' ? (
+  <Tooltip
+    visible={true}
+    onClose={() => setVisibleTooltip(null)}
+    popover={<Text color="white" style={{ color: 'white' }}>Your check-out time</Text>}
+    backgroundColor="rgb(29,91,65)"
+  >
+    <TouchableOpacity onPress={() => setVisibleTooltip('checkout')}>
+      <View style={{ justifyContent: "center", flexDirection: "column", alignItems: "center" }}>
+        <Image
+          style={{ width: 25, height: 25 }}
+          source={require("../../assets/images/camera/historys.png")}
+        />
+        <Text
+          style={{
+            marginTop: ScreenHeight * 0.02,
+            marginBottom: ScreenHeight * 0.01,
+            color: "black"
+          }}
+        >
+          {checkouttime ? checkouttime : "-- + --"}
+        </Text>
+        <Text style={{ color: "black" }}>Checkout Time</Text>
+      </View>
+    </TouchableOpacity>
+  </Tooltip>
+) : (
+  <TouchableOpacity onPress={() => setVisibleTooltip('checkout')}>
+    <View style={{ justifyContent: "center", flexDirection: "column", alignItems: "center" }}>
+      <Image
+        style={{ width: 25, height: 25 }}
+        source={require("../../assets/images/camera/historys.png")}
+      />
+      <Text
+        style={{
+          marginTop: ScreenHeight * 0.02,
+          marginBottom: ScreenHeight * 0.01,
+          color: "black"
+        }}
+      >
+        {checkouttime ? checkouttime : "-- + --"}
+      </Text>
+      <Text style={{ color: "black" }}>Checkout Time</Text>
+    </View>
+  </TouchableOpacity>
+)}
+
+      {/* <Pressable onPress={() => setVisibleTooltip('checkout')}>
+        <View style={{ justifyContent: "center", flexDirection: "column", alignItems: "center" }}>
+        <Tooltip
+      visible={visibleTooltip==="checkout"}
+      onClose={() => setVisibleTooltip(null)}
+      popover={<Text style={{ color: 'white' }}>This shows the check-out time</Text>}
+      backgroundColor="#333"
+    >
+          <Image
+            style={{ width: 25, height: 25 }}
+            source={require("../../assets/images/camera/historys.png")}
+          />
+              </Tooltip>
+          <Text
+            style={{
+              marginTop: ScreenHeight * 0.02,
+              marginBottom: ScreenHeight * 0.01,
+              color: "black"
+            }}
+          >
+            {checkouttime ? checkouttime : "-- + --"}
+          </Text>
+          <Text style={{ color: "black" }}>Checkout Time</Text>
+        </View>
+      </Pressable> */}
+
+{/* <View style={{justifyContent:"center",flexDirection:"column", alignItems:"center"}}>
+<Image style={{width:30,height:30}} source={require("../../assets/images/camera/arrow.png")}/>
+<Text  color="black"style={{marginTop:ScreenHeight*0.02,marginBottom:ScreenHeight*0.01}}>
+  {punching?punching:"-- + --"}
+</Text>
+<Text color="black">Total time</Text>
+</View> */}
+{/* <Tooltip
+      visible={visibleTooltip==='total'}
+      onOpen={() => setVisibleTooltip('total')}
+      onClose={() => setVisibleTooltip(null)}
+      popover={<Text style={{ color: 'white' }}>This shows the total working time</Text>}
+      backgroundColor="#333"
+    >
+      <Pressable onPress={() => setVisibleTooltip('total')}>
+        <View style={{ justifyContent: "center", flexDirection: "column", alignItems: "center" }}>
+          <Image
+            style={{ width: 30, height: 30 }}
+            source={require("../../assets/images/camera/arrow.png")}
+          />
+          <Text
+            style={{
+              marginTop: ScreenHeight * 0.02,
+              marginBottom: ScreenHeight * 0.01,
+              color: "black"
+            }}
+          >
+            {punching ? punching : "-- + --"}
+          </Text>
+          <Text style={{ color: "black" }}>Total time</Text>
+        </View>
+      </Pressable>
+    </Tooltip> */}
+    {visibleTooltip === 'total' ? (
+  <Tooltip
+    visible={true}
+    onClose={() => setVisibleTooltip(null)}
+    popover={<Text color="white" style={{ color: 'white' }}>  Total working time</Text>}
+    backgroundColor="rgb(29,91,65)"
+  >
+    <TouchableOpacity onPress={() => setVisibleTooltip('total')}>
+      <View style={{ justifyContent: "center", flexDirection: "column", alignItems: "center" }}>
+        <Image
+          style={{ width: 30, height: 30 }}
+          source={require("../../assets/images/camera/arrow.png")}
+        />
+        <Text
+          style={{
+            marginTop: ScreenHeight * 0.02,
+            marginBottom: ScreenHeight * 0.01,
+            color: "black"
+          }}
+        >
+          {punching ? punching : "-- + --"}
+        </Text>
+        <Text style={{ color: "black" }}>Total time</Text>
+      </View>
+    </TouchableOpacity>
+  </Tooltip>
+) : (
+  <TouchableOpacity onPress={() => setVisibleTooltip('total')}>
+    <View style={{ justifyContent: "center", flexDirection: "column", alignItems: "center" }}>
+      <Image
+        style={{ width: 30, height: 30 }}
+        source={require("../../assets/images/camera/arrow.png")}
+      />
+      <Text
+        style={{
+          marginTop: ScreenHeight * 0.02,
+          marginBottom: ScreenHeight * 0.01,
+          color: "black"
+        }}
+      >
+        {punching ? punching : "-- + --"}
+      </Text>
+      <Text style={{ color: "black" }}>Total time</Text>
+    </View>
+  </TouchableOpacity>
+)}
+
+      </View>
+{/* end...... new */}
+      {/* {renderCalendarList()} */}
+    </ScrollView>
+  );
+  return (
+    <>
+      <SafeAreaView style={styles.container}>
+       
+        {renderHeader()}
+
+       
+        <Modal
+        visible={modalopen}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setModalVisible(false)}
+      
+      >
+        <View
+          style={styles.modalContainer}
+        >
+        
+       <View style={styles.modalContentcheckin}> 
+     
+     <View style={{ }}> 
+       
+        <View style={{display:"flex", gap:20,justifyContent:"center",alignItems:"center" ,flexDirection:"row" }}>
+        <Image
+          resizeMode="contain"
+          source={require("/assets/logo.png")}
+          style={{width:screenWidth*0.09,height:ScreenHeight*0.078}}
+        />
+       <View style={{marginTop:20}}>
+       <Text
+          color="black"
+              style={{
+                fontSize:screenWidth*0.01,
+                fontWeight: "bold",
+                color:"black",
+              
+              }}
+            >
+              White force Outsourcing Public Limited
+              </Text>
+              <Text
+           
+              style={{
+                
+                fontSize:screenWidth*0.034,
+                fontWeight: "bold",
+                
+                color:"black"
+              }}
+            >
+              Have a nice day this here slid button
+            </Text>
+         
+       </View>
+              <TouchableOpacity onPress={()=>{setmodalopen(false)}} ><Image  style={{width:screenWidth*0.04, height:ScreenHeight*0.015}}source={require("../../assets/images/camera/close.png")}/>
+         </TouchableOpacity>
+           
+           
+        </View>
+         
+     </View>
+       <View
+            style={{
+              width: "80%",
+              padding: 20,
+              backgroundColor: "#fff",
+              borderRadius: 10,
+              alignItems: "center",
+            }}
+          >
+            
+
+            {/* Swipe Button */}
+            <View style={{ width: screenWidth*0.85,
+            marginBottom:screenWidth*0.16,
+                height: ScreenHeight*0.08,
+                backgroundColor:bgColor,
+                borderRadius: screenWidth*.25 }}>
+            <View
+              style={{
+                width: screenWidth*0.8,
+                height: ScreenHeight*0.08,
+                backgroundColor:bgColor,
+                borderRadius: screenWidth*.25,
+                padding:screenWidth*0.04,
+                overflow:"scroll",
+                justifyContent: "center",
+               
+              }}
+            >
+             <Text color="white"
+                style={{
+                  position: "absolute",
+                  left: screenWidth*0.24,
+                  color:bgColor?"red": "white",
+                  fontSize:screenWidth*0.05,
+                  fontWeight:"bold"
+                }}
+              >
+              {isCheckedIn?"Swipe Write to Checkout":"Swipe Write to Checkin"} 
+              </Text>
+           
+            <Animated.View
+                style={{
+                  position: "absolute",
+                  width: screenWidth*0.15,
+                  height:ScreenHeight*0.07,
+                  justifyContent:"center",
+                  alignItems:"center",
+                  backgroundColor: "white",
+                  borderRadius: ScreenHeight*1,
+                left:5,
+                 
+                  transform: [{ translateX }],
+                }}
+                {...panResponder.panHandlers}
+                
+              >
+                              <Image style={{width:screenWidth*0.05,height:ScreenHeight*0.025}} source={require("../../assets/images/camera/checkin.png")}/>
+                </Animated.View>
+            </View>
+            </View>     
+          </View>
+       </View>
+        </View>
+      </Modal>
+      
+      <Modal
+        transparent={true}
+        animationType="fade"
+        visible={loader}>  
+      <View style={styles.modalContainer}>
+      <View style={styles.modalContent}>
+        <View style={styles.modalImageContainer}>
+          <LottieView
+            loop
+            autoPlay
+            source={require("/assets/gif/face-recognition.json")}
+            style={styles.modalImage}
+          />
+        </View>
+        <View style={styles.modalHeadingContainer}>
+          <Text style={styles.modalHeading} color={colors.black} bold>
+{/* Proccessing... */}
+
+        <View style={{justifyContent:"center", display:"flex",alignItems:"center"  ,width:screenWidth}}>
+          <Progress.Bar progress={progress / 100} width={200} style={{ marginTop: 20 }} />
+          <Text style={{ marginTop: 10 ,fontSize:15 ,alignSelf:"center"}}>{progress}%...</Text>
+        </View>
+       
+            <View
+style={{
+flex: 1,
+justifyContent: 'center',
+alignItems: 'center',
+}}
+>
+
+</View>
+
+          </Text>
+          <Text style={styles.modalSubHeading} color={"black"}>
+
+          </Text>
+        </View>
+        <View style={styles.modalButtonContainer}>
+          <TouchableOpacity
+            // onPress={() => {
+            //   handlePermission();
+            //   Keyboard.dismiss();
+            // }}
+            onPress={()=>{setModalVisible2(false)
+              setModalVisible2(false)
+            }}
+          >
+            <View style={[styles.modalButton]}>
+              <Text style={styles.buttonText} color={colors.white} >
+              Please Wait...
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+      
+      </Modal>
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={{ flex: 1, position:"relative", justifyContent: 'center', alignItems: 'center',  backgroundColor: 'rgba(12, 11, 10, 0.5)' }}>
+          <View 
+            style={{ 
+              backgroundColor:"white",
+             
+              // marginTop:screenWidth*0.0 , // Space from the top
+              // padding: screenWidth*0.04,
+              height:ScreenHeight*0.16,
+              borderRadius: 10,
+             
+               
+              alignItems: 'center',
+              width:screenWidth*0.7
+            }}
+          >
+          
+        <View >
+       
+                            <Image style={{width:ScreenWidth*0.18,height:ScreenWidth*0.18,borderRadius:50  ,position:"absolute", top:-34, left:-35}} source={require("../../../assets/camera/ic_launchers.png")}/>
+        </View>
+        <TouchableOpacity  style={{position:"absolute" ,top:20,right:15,}} onPress={()=>{setModalVisible(false)}}>
+
+        <Image style={{  width:15, height:15}} source={require("../../../assets/camera/close.png")}/>
+        </TouchableOpacity>
+
+            <View style={{justifyContent:"center", flexDirection:"column" ,alignItems:"center" ,   height:ScreenHeight*0.15,            width:screenWidth*0.7}}>
+
+            <Text color="black" style={{ fontSize: 24, color: 'rgb(29,91,65)', fontWeight: 'bold' }}>Checkin !!</Text>
+            <Text color="black" style={{ color: '#FFFFFF', marginTop: 10 }}> You have checked In successfully..</Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      {/* open map tracking */}
+       <Modal
+        animationType="fade"
+        transparent={true}
+        visible={mapmodalVisible}
+        onRequestClose={() => setmapModalVisible(false)}
+      >
+        <View style={{ flex: 1, position:"relative", justifyContent: 'center', alignItems: 'center',  backgroundColor: 'rgba(12, 11, 10, 0.5)' }}>
+          <View 
+            style={{ 
+              backgroundColor:"white",
+             
+              // marginTop:screenWidth*0.0 , // Space from the top
+              // padding: screenWidth*0.04,
+              height:ScreenHeight*0.19,
+              borderRadius: 10,
+             
+               
+              alignItems: 'center',
+              width:screenWidth*0.78
+            }}
+          >
+          
+        <View >
+       
+                            <Image style={{width:ScreenWidth*0.158,height:ScreenWidth*0.158,borderRadius:50  ,position:"absolute", top:-40, left:-35}} source={require("../../../assets/camera/newlogo.png")}/>
+        </View>
+        <TouchableOpacity  style={{position:"absolute" ,top:20,right:15,}} onPress={()=>{setmapModalVisible(false)}}>
+
+        <Image style={{  width:15, height:15}} source={require("../../../assets/camera/close.png")}/>
+        </TouchableOpacity>
+
+            <View style={{justifyContent:"center", flexDirection:"column" ,alignItems:"center" ,   height:ScreenHeight*0.15,     marginTop:10,       width:screenWidth*0.9}}>
+<View style={{flexDirection:"row", justifyContent:"center", alignItems:"center" ,gap:5}}>
+  <Text color="black" style={{ fontSize: 18, color: 'black', fontWeight: 'bold',  textTransform:"capitalize"}}>
+ outside check-in zone
+
+
+
+</Text>
+<Text color="#FF690C" style={{ fontSize: 16, textTransform:"capitalize", color: '#FF690C', fontWeight: 'bold' }}>
+{distance}
+</Text>
+</View>
+
+            {/* <Text color="black" style={{ fontSize: 20, color: 'rgb(29,91,65)', fontWeight: 'bold' }}>Outside check-in zone {distance} </Text> */}
+            <TouchableOpacity onPress={()=>{
+              NavigationService.navigate("maproute")
+            }} style={{ alignItems:"center", marginTop: 20 , padding:10 ,height:40,width:250,backgroundColor:"#224942" , borderWidth:1, borderRadius:20 ,}}><Text color="white" style={{ color: 'white',  }}>Click to view in map</Text></TouchableOpacity>
+           
+            </View>
+          </View>
+        </View>
+      </Modal>
+      {/* ............... */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalVisible1}
+        onRequestClose={() => setModalVisible1(false)}
+      >
+         <View style={{ flex: 1, position:"relative", justifyContent: 'center', alignItems: 'center',  backgroundColor: 'rgba(12, 11, 10, 0.5)' }}>
+          <View 
+            style={{ 
+              backgroundColor:"white",
+             
+              // marginTop:screenWidth*0.0 , // Space from the top
+              // padding: screenWidth*0.04,
+              height:ScreenHeight*0.16,
+              borderRadius: 10,
+             
+               
+              alignItems: 'center',
+              width:screenWidth*0.7
+            }}
+          >
+          
+        <View >
+       
+                            <Image style={{ width:ScreenWidth*0.18,height:ScreenWidth*0.18 ,borderRadius:50  ,position:"absolute", top:-34, left:-35}} source={require("../../../assets/camera/ic_launchers.png")}/>
+        </View>
+        <TouchableOpacity  style={{position:"absolute" ,top:20,right:15,}} onPress={()=>{setModalVisible1(false)}}>
+
+        <Image style={{  width:15, height:15}} source={require("../../../assets/camera/close.png")}/>
+        </TouchableOpacity>
+
+            <View style={{justifyContent:"center", flexDirection:"column" ,alignItems:"center" ,   height:ScreenHeight*0.15,            width:screenWidth*0.7}}>
+            <Text color="black" style={{ fontSize: 24, color: 'rgb(29,91,65)', fontWeight: 'bold' }}>Checkout!!</Text>
+            <Text color="black" style={{ color: '#FFFFFF', marginTop: 10 }}> You have checked Out successfully..</Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={checkedout}
+        onRequestClose={() => setcheckedout(false)}
+      >
+         <View style={{ flex: 1, position:"relative", justifyContent: 'center', alignItems: 'center',  backgroundColor: 'rgba(12, 11, 10, 0.5)' }}>
+          <View 
+            style={{ 
+              backgroundColor:"white",
+             
+              // marginTop:screenWidth*0.0 , // Space from the top
+              // padding: screenWidth*0.04,
+              height:ScreenHeight*0.16,
+              borderRadius: 10,
+             
+               
+              alignItems: 'center',
+              width:screenWidth*0.7
+            }}
+          >
+          
+        <View >
+       
+                            <Image style={{ width:ScreenWidth*0.18,height:ScreenWidth*0.18 ,borderRadius:50  ,position:"absolute", top:-34, left:-35}} source={require("../../../assets/camera/ic_launchers.png")}/>
+        </View>
+        <TouchableOpacity  style={{position:"absolute" ,top:20,right:15,}} onPress={()=>{setcheckedout(false)}}>
+
+        <Image style={{  width:15, height:15}} source={require("../../../assets/camera/close.png")}/>
+        </TouchableOpacity>
+
+            <View style={{justifyContent:"center", flexDirection:"column" ,alignItems:"center" ,   height:ScreenHeight*0.15,            width:screenWidth*0.7}}>
+            <Text color="black" style={{ fontSize: 24, color: 'rgb(29,91,65)', fontWeight: 'bold' }}>Checked Out!!</Text>
+            <Text color="black" style={{ color: '#FFFFFF', marginTop: 10 }}>You have already checked out...</Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
+        <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalVisible2}
+        onRequestClose={() => setModalVisible2(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center',  backgroundColor: 'rgba(12, 11, 10, 0.5)' }}>
+          <View 
+            style={{ 
+              backgroundColor:"rgb(242, 247, 245)",
+              borderColor: 'rgb(6, 27, 16)',
+           
+              height:ScreenHeight*0.25,
+              borderRadius: 10,
+              borderWidth:screenWidth*0.002,
+               
+              alignItems: 'center',
+              width:screenWidth*0.7
+            }}
+          >
+           <View style={{justifyContent:"center",alignItems:"flex-start",flex:1}}>
+        
+        </View>
+        <View >
+        <LottieView
+                              loop
+                              autoPlay
+                              source={require("../../../assets/camera/error.json")}
+                              style={{width:screenWidth*0.8,height:ScreenHeight*0.1}}
+
+                            />
+                           
+        </View>
+            <View style={{marginBottom:ScreenHeight*0.04  ,justifyContent:"center", display:"flex"  ,alignItems:"center"}}>
+
+            <Text color="black" style={{ fontSize: 24, color: 'rgb(112, 64, 8)', fontWeight: 'bold' }}>No face Match !!</Text>
+            <Text color="black" style={{ fontSize: 16, color: '#FFFFFF', marginTop: 10 }}> Please try again..</Text>
+            <TouchableOpacity style={{height:30,width:70, borderRadius:5, display:"flex", justifyContent:"center",alignItems:"center", backgroundColor:"blue" ,margin:15}} onPress={()=>{setModalVisible2(false)}}>
+              <Text color="white" style={{color:"white"}}>Ok</Text>
+            </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    
+     
+        {isOpen && (
+          <>
+        <AwesomeCamera
+          setIsOpen={handleSetIsOpen}
+          onChange={(v,image) => {
+            if (v ===true) {
+              console.log("image ka path",image)
+              // handleButtonPress();
+              submitCheckInOut(image)
+            } else {
+              setModalVisible2(true);
+             // 3 seconds timeout
+            }
+          }}
+          
+onLoading={ (v)=> setloader(v)}
+          getData={(data) => {
+            // console.log("photos data...",data);
+          //  setphotodata(data)
+          // console.log(photodata)
+          // submitCheckInOut(data)
+         console.log("Modal show",data)
+          }}
+          
+        />
+        
+        </>
+      )}
+     
+      </SafeAreaView>
+    
+    </>
+  ); 
+};
+
+export default HomeScreen;

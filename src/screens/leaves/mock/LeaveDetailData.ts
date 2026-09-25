@@ -1,0 +1,32 @@
+export default [
+  {
+    id: 1,
+    type: "past",
+    date_from: "Mar 10, 2023",
+    date_to: "Mar 14, 2023",
+    apply_days: "03 Days",
+    leave_balance: "16 Days",
+    approved_by: "Mili Chavan",
+    status: "approved",
+  },
+  {
+    id: 2,
+    type: "past",
+    date_from: "Apr 10, 2023",
+    date_to: "Apr 14, 2023",
+    apply_days: "01 Days",
+    leave_balance: "16 Days",
+    approved_by: "Mili Chavan",
+    status: "rejected",
+  },
+  {
+    id: 3,
+    type: "upcoming",
+    date_from: "May 10, 2023",
+    date_to: "May 14, 2023",
+    apply_days: "03 Days",
+    leave_balance: "16 Days",
+    approved_by: "Tarun Gupta",
+    status: "pending",
+  },
+];

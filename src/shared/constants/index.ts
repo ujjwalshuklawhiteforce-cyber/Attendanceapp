@@ -1,0 +1,20 @@
+// ? Screens
+export const SCREENS = {
+  ONBOARDING: "ONBOARDING",
+  SIGNIN: "SIGNIN",
+  HOME: "HOME",
+  LEAVE: "LEAVE",
+  TASK: "TASK",
+  TEAM: "TEAM",
+  TEAMMEMBERDETAIL: "TEAMMEMBERDETAIL",
+  ADDTEAMMEMBER: "ADDTEAMMEMBER",
+  ADDTASK: "ADDTASK",
+  PROFILE: "PROFILE",
+  DETAIL: "DETAIL",
+  LOGIN: "LOGIN",
+  NOTIFICATION: "NOTIFICATION",
+};
+
+export const URLS = {
+  baseURL: "https://whiteforcepayroll.com/admin/api",
+};

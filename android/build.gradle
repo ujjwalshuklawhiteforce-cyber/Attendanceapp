@@ -1,0 +1,200 @@
+// buildscript {
+//     ext {
+//         buildToolsVersion = "34.0.0"
+//         minSdkVersion = 21
+//         compileSdkVersion = 34
+//         targetSdkVersion = 34
+//         ndkVersion = "25.1.8937393"
+//         kotlinVersion = "1.8.0"
+//     }
+// //     ext {
+// //     buildToolsVersion = "35.0.0"
+// //     minSdkVersion = 21
+// //     compileSdkVersion = 35
+// //     targetSdkVersion = 35
+// //     ndkVersion = "25.1.8937393"
+// //     kotlinVersion = "1.9.24" // update Kotlin, older 1.8.0 may conflict
+// // }
+
+//     repositories {
+//         google()
+//         mavenCentral()
+//     }
+//     dependencies {
+//         classpath("com.android.tools.build:gradle:8.2.1")
+//         classpath("com.facebook.react:react-native-gradle-plugin")
+//         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
+//         // classpath("com.google.gms:google-services:4.4.3") // ✅ MUST for Firebase
+//         // classpath("com.android.tools.build:gradle")
+//         // classpath("com.facebook.react:react-native-gradle-plugin")
+//         // classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+//         // classpath 'com.android.tools.build:gradle:7.2.2'   
+        
+
+//     }
+    
+// }
+
+
+
+// apply plugin: "com.facebook.react.rootproject"
+// configurations.all {
+//     resolutionStrategy {
+//         force "com.google.android.gms:play-services-location:21.0.1"
+//     }
+// }
+// ========================================
+// build.gradle (Project Level) - OPTIMIZED FOR GRADLE 8.7
+// ========================================
+// buildscript {
+//     ext {
+//         buildToolsVersion = "34.0.0"
+//         minSdkVersion = 21
+//         compileSdkVersion = 35        // ✅ API 35 for Play Console
+//         targetSdkVersion = 35          // ✅ API 35 for Play Console
+//         ndkVersion = "25.1.8937393"
+//         kotlinVersion = "1.9.24"       // ✅ Required for API 35
+//     }
+
+//     repositories {
+//         google()
+//         mavenCentral()
+//     }
+    
+//     dependencies {
+//         // ✅ AGP 8.6.1 works perfectly with Gradle 8.7
+//         classpath("com.android.tools.build:gradle:8.6.1")
+//         classpath("com.facebook.react:react-native-gradle-plugin")
+//         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
+//     }
+// }
+
+// apply plugin: "com.facebook.react.rootproject"
+
+// allprojects {
+//     repositories {
+//         google()
+//         mavenCentral()
+//     }
+// }
+
+// configurations.all {
+//     resolutionStrategy {
+//         force "com.google.android.gms:play-services-location:21.0.1"
+//         force "androidx.core:core:1.12.0"
+//         force "androidx.appcompat:appcompat:1.6.1"
+//     }
+// }
+buildscript {
+    ext {
+        buildToolsVersion = "35.0.0"
+        minSdkVersion = 24
+        compileSdkVersion = 36
+        targetSdkVersion = 36
+        ndkVersion = "25.1.8937393"
+
+        kotlinVersion = "1.9.24"  // ✅ Use this, NOT 1.8.22
+    }
+
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.6.1")
+        classpath("com.facebook.react:react-native-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
+    }
+}
+
+apply plugin: "com.facebook.react.rootproject"
+
+//  
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    configurations.all {
+        resolutionStrategy {
+            force "org.jetbrains.kotlin:kotlin-stdlib:1.9.24"
+            force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.24"
+            force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.24"
+            force "androidx.core:core-ktx:1.13.1"
+            force "androidx.core:core:1.13.1"
+        }
+    }
+}
+
+// buildscript {
+//     ext {
+//         buildToolsVersion = "34.0.0"
+//         minSdkVersion = 21
+//         compileSdkVersion = 34
+//         targetSdkVersion = 34
+//         ndkVersion = "25.1.8937393"
+//         kotlinVersion = "1.8.0"
+//     }
+
+//     repositories {
+//         google()
+//         mavenCentral()
+//     }
+//     dependencies {
+//         classpath("com.android.tools.build:gradle:7.2.2")
+//         classpath("com.facebook.react:react-native-gradle-plugin")
+//         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+//     }
+// }
+
+// apply plugin: "com.facebook.react.rootproject"
+
+// // 👇 Add this AFTER buildscript
+// allprojects {
+//     repositories {
+//         google()
+//         mavenCentral()
+//         // ✅ Add TransistorSoft repository
+//         // maven { url "https://dl.bintray.com/transistorsoft/releases" }
+//     }
+
+//     configurations.all {
+//         resolutionStrategy {
+//             force "com.google.android.gms:play-services-location:21.0.1"
+//         }
+//     }
+// }
+
+
+// buildscript {
+//     ext {
+//         buildToolsVersion = "35.0.0"
+//         minSdkVersion = 21
+//         compileSdkVersion = 35
+//         targetSdkVersion = 35
+//         ndkVersion = "25.1.8937393"
+//         kotlinVersion = "1.9.24" // use latest stable Kotlin
+//     }
+
+//     repositories {
+//         google()
+//         mavenCentral()
+//     }
+
+//     dependencies {
+//         // ✅ Use latest Android Gradle Plugin that supports API 35
+//         classpath("com.android.tools.build:gradle:8.5.2")
+
+//         // ✅ React Native Gradle plugin
+//         classpath("com.facebook.react:react-native-gradle-plugin")
+
+//         // ✅ Kotlin Gradle plugin (match kotlinVersion above)
+//         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24")
+//     }
+// }
+
+// React Native plugin
+// apply plugin: "com.facebook.react.rootproject"

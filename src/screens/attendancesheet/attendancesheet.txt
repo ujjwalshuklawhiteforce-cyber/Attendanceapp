@@ -1,0 +1,854 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Modal, TouchableHighlight, Image, ImageBackground, StyleProp, Alert } from 'react-native';
+import { useAuth } from "context/AuthContext";
+import Svg, { LinearGradient, Stop, Rect } from 'react-native-svg';
+import LottieView from 'lottie-react-native';
+
+import { color } from '@rneui/base';
+import { ScreenHeight, ScreenWidth } from '@freakycoder/react-native-helpers';
+import { ScreenStackHeaderRightView } from 'react-native-screens';
+import { set, setDate } from 'date-fns';
+import data from '../../data/data';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Switch } from 'react-native-gesture-handler';
+interface AttendanceItem {
+  Year: string;
+  attandance: string;
+  date: number;
+  day: string;
+  holiday: number;
+  in: string;
+  in_image: string;
+  month: string;
+  out: string;
+  out_image: string;
+
+}
+interface shiftAttendanceItem  {
+  Year: string;
+  attendance: string; // "P", "A", "NA"
+  date: string;
+  day: string;
+  holiday: number; // 0 or 1
+  month: string;
+  punches: string[]; // assuming array of time strings
+};
+
+const AttendanceSheet: React.FC = () => {
+  const [attendanceData, setAttendanceData] = useState<AttendanceItem[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [shiftdata,setshiftdata]=useState([])
+  const { userInfo } = useAuth();
+  const parseData = JSON.parse(userInfo ? userInfo : {});
+const fullname=parseData.data?.data?.name;
+  const  user_ids=parseData["data"].user_id ;
+const userid=parseData?.data?.data?.user_id;
+  const designation=parseData.data?.data?.designation;
+  
+  const currentDate = new Date()
+;
+  // Calculate the previous month and year
+  const previousMonth = currentDate.getMonth(); // If January, set to December
+  // Dropdown states
+  const month=previousMonth+1;
+  const [selectedMonth, setSelectedMonth] = useState<string>(`${month}`);
+  const [selectedYear, setSelectedYear] = useState<string>(`2025`);
+  const [ totalPresent,  setTotalPresent] = useState<number>(0);
+  const [ totalAbsent,  setTotalAbsent] = useState<number>(0);
+  const [totalhalfday,settotalhalday]= useState<number>(0);
+  //  const imagesource=parseData["data"]?.data.image ||;
+  // Modal visibility
+  const [isMonthModalVisible, setIsMonthModalVisible] = useState(false);
+  const [isYearModalVisible, setIsYearModalVisible] = useState(false);
+
+  const months = [
+    { label: <Text style={{color:"black"}}>January</Text>, value: '1' },
+    { label:<Text style={{color:"black"}} >February</Text> , value: '2' },
+    { label:  <Text style={{color:"black"}}>March</Text>, value: '3' },
+    { label: <Text style={{color:"black"}}>April</Text> , value: '4' },
+    { label: <Text style={{color:"black"}}>May</Text>, value: '5' },
+    { label:  <Text style={{color:"black"}}>June</Text>, value: '6' },
+    { label: <Text style={{color:"black"}}>July</Text> , value: '7' },
+    { label: <Text style={{color:"black"}}>August</Text>, value: '8' },
+    { label: <Text style={{color:"black"}}>September</Text>, value: '9' },
+    { label: <Text style={{color:"black"}}>October</Text>, value: '10' },
+    { label: <Text style={{color:"black"}}>November</Text>, value: '11' },
+    { label: <Text style={{color:"black"}}>December</Text>, value: '12' },
+  ];
+  const currentYear = new Date().getFullYear(); // Get the current year
+const startYear = 2020; // Define the start year
+const years = [];
+
+// Use a loop to generate the years
+for (let year = startYear; year <= currentYear; year++) {
+  years.push({ label: <Text style={{ color: "black" }}>{year}</Text>, value: year.toString() });
+}
+
+console.log(selectedMonth, selectedYear)
+const getCheckInOutData = async () => {
+  try {
+    const longitute = await AsyncStorage.getItem("longitute");
+    const latitute = await AsyncStorage.getItem("latitute");
+    console.log(longitute,latitute)
+  }
+ 
+  catch(err){
+    console.log(err)
+  }
+}
+useEffect(() => {
+  fetchAttendanceData();
+  getCheckInOutData()
+  // console.log(parseData)
+  console.log("r",userid)
+}, [user_ids, ]);
+
+  const fetchAttendanceData = async () => {
+    fetchshitattendanceData()
+    setLoading(true);
+    try {
+      const response = await fetch('https://whiteforcepayroll.com/admin/api/getMonthAttendance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: `${user_ids?user_ids:userid}`,
+          month: selectedMonth,
+          year: selectedYear,
+        }),
+        
+      });
+      console.log("body",response)
+      const json = await response.json();
+       console.log("json",json)
+      if (json.status) {
+        setAttendanceData(json.data);
+    console.log("sddds",response.status)
+        let present = 0;
+        let absent = 0;
+        let halfday=0;
+        json.data.forEach((item: AttendanceItem) => {
+        
+// console.log(formattedDate)
+// setdate(formattedDate)
+          if (item.attandance === 'P') {
+            present++;
+          } else if (item.attandance === 'H' && item.holiday === 0) {
+            halfday++;
+          }
+          else if(item.attandance==='A'&& item.holiday === 0) {
+            absent++;
+          }
+
+        });
+        console.log("fre",user_ids?user_ids:userid)
+        
+
+        setTotalPresent(present);
+        setTotalAbsent(absent);
+        settotalhalday(halfday)
+        console.log("present", totalAbsent)
+       
+      } else {
+        setAttendanceData([]);
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+     
+      setAttendanceData([]); 
+    } finally {
+      setLoading(false);
+    }
+  };
+ const fetchshitattendanceData=async()=>{
+  try{
+const res=await fetch("https://whiteforcepayroll.com/admin/api/getMonthAttendance-new",{
+  method:"POST",
+  headers:{
+    'Content-Type': 'application/json',
+    
+  },
+     body: JSON.stringify({
+          user_id: `${user_ids?user_ids:userid}`,
+          month: selectedMonth,
+          year: selectedYear,
+        }),
+        
+      })
+      const data=await res.json();
+      setshiftdata(data.data)
+      console.log("shift",shiftdata)
+      // console.log("shiftdata",data)
+      // Example: shiftData is your response object
+const shiftData = data;
+
+// Loop through each day
+shiftData.data.forEach((day) => {
+  console.log(`📅 ${day.date} (${day.day})`);
+  console.log(`   Attendance: ${day.attendance}, Holiday: ${day.holiday}`);
+
+  if (day.punches && day.punches.length > 0) {
+    console.log("   Punches:");
+    day.punches.forEach((punch, index) => {
+      console.log(`     #${index + 1}: In: ${punch.in}, Out: ${punch.out}`);
+    });
+  } else {
+    console.log("   No punches recorded");
+  }
+});
+
+      
+  }catch(err){
+console.log(err)
+  }
+ }
+  const renderItem = ({ item }: { item: AttendanceItem }) => {
+    const formattedDate = `${item.date}`;
+    let attendanceStatus = '';
+  if (item.attandance === 'P') {
+    attendanceStatus = 'P';
+  } else if (item.attandance === 'H' && item.holiday === 0) {
+    attendanceStatus = 'H';
+  } else if (item.attandance === 'A' && item.holiday === 0) {
+    attendanceStatus = 'A';
+  } else {
+    attendanceStatus = '__';
+  }
+  
+
+  
+    return (
+        <View style={styles.row}>
+        <Text style={styles.cell}>{item.day},{formattedDate}</Text>
+        {/* <Text style={styles.cell}>{item.day}</Text> */}
+        <View style={styles.cell1}>
+<Text style={{color:"black"}}>
+{attendanceStatus
+}
+</Text>
+        </View>
+        <Text style={styles.cell1}>{item.in?item.in:"__"}</Text> 
+      
+        <View style={{  marginTop:0,  flex:1, display:"flex", flexDirection:"column"  , justifyContent:"center" ,alignItems:"center" }}><Text style={{display:item.in?"flex":"none" ,color:"black",alignItems:"center"}}>{item.out?item.out:"__"}</Text>
+        </View>
+       
+
+      </View>
+//     <View style={styles. mainrow}>
+//         <View style={styles.row}>
+//         <Text style={styles.cell}>{item.day},{formattedDate}</Text>
+//         {/* <Text style={styles.cell}>{item.day}</Text> */}
+//         <View style={styles.cell1}>
+// <Text style={{color:"black"}}>
+// {attendanceStatus
+// }
+// </Text>
+//           {/* {attendanceStatus==="P"?<Image style={{width:15,height:15}} source={require("../../../assets/camera/checkicon.png")}/>:<Image style={{width:10,height:10}} source={require("../../../assets/camera/closeicon.png")}/>} */}
+//         </View>
+//         <Text style={styles.cell1}>{item.in?item.in:"__"}</Text> 
+      
+//         <View style={{  marginTop:0,  flex:1, display:"flex", flexDirection:"column"  , justifyContent:"center" ,alignItems:"center" }}><Text style={{display:item.in?"flex":"none" ,color:"black",alignItems:"center"}}>{item.out?item.out:"__"}</Text>
+//         </View>
+       
+
+//       </View>
+//         <View style={styles.row}>
+//         <Text style={styles.cell}>{item.day},{formattedDate}</Text>
+//         {/* <Text style={styles.cell}>{item.day}</Text> */}
+//         <View style={styles.cell1}>
+// <Text style={{color:"black"}}>
+// {attendanceStatus
+// }
+// </Text>
+//           {/* {attendanceStatus==="P"?<Image style={{width:15,height:15}} source={require("../../../assets/camera/checkicon.png")}/>:<Image style={{width:10,height:10}} source={require("../../../assets/camera/closeicon.png")}/>} */}
+//         </View>
+//         <Text style={styles.cell1}>{item.in?item.in:"__"}</Text> 
+      
+//         <View style={{  marginTop:0,  flex:1, display:"flex", flexDirection:"column"  , justifyContent:"center" ,alignItems:"center" }}><Text style={{display:item.in?"flex":"none" ,color:"black",alignItems:"center"}}>{item.out?item.out:"__"}</Text>
+//         </View>
+       
+
+//       </View>
+//     </View>
+    );
+  }; 
+
+
+  type AttendanceItem = {
+  Year: string;
+  attendance: string; // "P", "A", "NA"
+  date: string;
+  day: string;
+  holiday: number; // 0 or 1
+  month: string;
+  punches: string[]; // assuming array of time strings
+};
+
+const renderItems = ({ item }: { item: shiftAttendanceItem }) => {
+  const formattedDate = item.date;
+
+  // Attendance Status
+  let attendanceStatus = '';
+  if (item.holiday === 1) {
+    attendanceStatus = 'H';
+  } else if (item.attendance === 'P') {
+    attendanceStatus = 'P';
+  } else if (item.attendance === 'A') {
+    attendanceStatus = 'A';
+  } else if (item.attendance === 'NA') {
+    attendanceStatus = '--';
+  } else {
+    attendanceStatus = '__';
+  }
+
+  // calculate punch block height
+// Calculate punch count considering only first 2 punches
+const punchCount = item.punches && item.punches.length > 0 
+  ? Math.min(item.punches.length, 2) // use 2 if more punches
+  : 1;
+
+const rowHeight = 25; // height of each punch row (adjust as needed)
+const totalPunchHeight = punchCount * rowHeight;
+
+
+  return ( 
+    <View style={styles.mainrow}>
+      <View style={{ flexDirection: 'row', flex: 1 }}>
+        {/* Date + Status column (center vertically) */}
+        <View
+          style={{
+            flex: 2.5,
+            justifyContent: 'center',
+            marginTop: totalPunchHeight > 25 ? (totalPunchHeight - 25) / 2 : 0,
+          
+           
+          }}
+        >
+          <Text style={[styles.cell, { textAlign: "left" }]}>
+            {item.day}, {formattedDate} {attendanceStatus}
+          </Text>
+        </View>
+        <View
+          style={{
+           
+            justifyContent: 'center',
+            marginTop: totalPunchHeight > 25 ? (totalPunchHeight - 25) / 2 : 0,
+          
+           
+          }}
+        >
+          <Text style={[styles.cell, { textAlign: 'center' }]}>
+           {attendanceStatus}
+          </Text>
+        </View>
+
+        {/* Punches column */}
+        <View style={{ flex: 3, flexDirection: 'column' }}>
+           {item.punches && item.punches.length > 0 ? (
+    item.punches.slice(0, 2).map((punch, index) => (
+      <View
+        key={index}
+        style={{
+          flexDirection: 'row',
+          // justifyContent: 'flex-start',
+          marginLeft: 30,
+          alignItems:"center",
+          marginTop: index === 0 ? 0 : 5,
+        }}
+      >
+        <Text style={styles.cell1}>
+          {punch.in ? punch.in : '__'}
+        </Text>
+        <Text style={styles.cell1}>
+          {punch.out ? punch.out : '__'}
+        </Text>
+      </View>
+    ))
+  )
+           : (
+            <View style={{ flexDirection: 'row', }}>
+              <Text style={[styles.cell1, { marginLeft: 25 }]}>  __</Text>
+              <Text style={[styles.cell1]}> __</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+};
+
+
+
+
+
+
+
+  return (
+    <View style={styles.container}>
+       <Svg height="100%" width="100%" style={{ position: 'absolute', top: 0, left: 0, display:"flex", justifyContent:"center", alignItems:"center"}}>
+                     <LinearGradient id="gradient1" x1="40%" y1="0%" x2="40%" y2="70%">
+                       <Stop offset="0%" stopColor="#0C322D" stopOpacity="1" />
+                       <Stop offset="50%" stopColor="#17533F" stopOpacity="0.9" />
+                     </LinearGradient>
+             
+              <Rect x="0" y="0" width="100%" height="100%" fill="url(#gradient1)" />
+             <View  style={{width:ScreenWidth*1 ,height:"100%", backgroundColor:"transparent", flexDirection:"row", justifyContent:"center",alignItems:"center"}}>
+             <View style={{width:ScreenWidth*0.4 , height:"100%", marginTop:ScreenHeight*0.15, alignItems:"center"}} >
+             <View style={{alignItems:"center", flexDirection:"column", gap:15}}>
+             {/* <Image
+                     resizeMode="cover"
+                     source={{ uri:  imagesource?imagesource:parseData["data"].image }}
+                     style={{  width: ScreenWidth * 0.2,
+                      height: ScreenWidth * 0.2,
+                      borderRadius: ScreenWidth * 1,}}
+                   /> */}
+                  <View >
+                    <View style={{ width:ScreenWidth*1,justifyContent:"center",display:"flex" ,flexDirection:"row"}}>
+                    <Text  style={{color:"white", fontSize:28, textTransform:"capitalize" , fontWeight:"600"}}>{fullname?fullname:parseData["data"].name}</Text>
+
+                    </View>
+                 <View  style={{flexDirection:"row",margin:10, display:"flex", alignItems:"center",justifyContent:"center", gap:8}}>
+                 <Image  style={{width:15,height:19}} source={require("../../assets/../assets/images/camera/verified.png")} />
+                 
+                 <Text style={{color:"white", fontSize:18 ,textTransform:"capitalize",fontWeight:"600"}}>{parseData["data"]. designation? parseData["data"].designation :designation?designation:"Enter your designation"}
+                 </Text>
+                 </View>
+                  </View>
+                 
+             </View>
+      
+      </View>
+             </View>
+            </Svg>
+      
+ <View style={{flex:1 , marginTop: ScreenHeight * 0.14,}}>
+ <View style={{display:"flex",width:ScreenWidth*1, flexDirection:"row", justifyContent:"center",gap:20}}>
+ <TouchableOpacity style={{ width:ScreenWidth*0.27,backgroundColor:"#B3C3BF",height:ScreenHeight*0.034,  borderWidth:1, borderColor:"rgb(20, 77, 68)",  alignItems:"center", gap:15,display:"flex", flexDirection:"row", marginTop:50,width:ScreenWidth*0.25,borderRadius:ScreenWidth*1 ,justifyContent:"center", shadowColor: "#000", shadowOffset: { width: 100, height: 200 }, shadowOpacity: 0, shadowRadius: 1.84, elevation: 10 }} onPress={() => setIsMonthModalVisible(true)}>
+                 <View style={{ }}>
+                
+                 {/* <Text style={{color:"black", textTransform:"capitalize", fontSize:14}}>your
+                   </Text> */}
+               
+              <Text style={{fontWeight:"700"}} >
+                {months.find  ((month) => month.value === selectedMonth)?.label}
+              </Text>
+                 </View>
+              </TouchableOpacity>
+              
+          <TouchableOpacity style={{backgroundColor:"#B3C3BF", height:ScreenHeight*0.034, alignItems:"center", borderWidth:1, borderColor:"rgb(20, 77, 68)", gap:15,display:"flex", flexDirection:"row", marginTop:50, width:ScreenWidth*0.27, justifyContent:"center",borderRadius:ScreenWidth*1}} onPress={() => setIsYearModalVisible(true)}>
+                 <View style={{}}>
+                 
+          <Text style={{fontWeight:   "700"}}  onPress={() => setIsYearModalVisible(true)}>
+              {years.find((month) => month.value === selectedYear)?.label}
+            </Text>
+             {/* <Text style={styles.selectedValue}>{selectedYear}</Text> */}
+                 </View>
+          </TouchableOpacity>
+          <TouchableOpacity  onPress={fetchAttendanceData}>
+                 <View style={{flexDirection:"row",  justifyContent:"center", gap:10, height:ScreenHeight*0.034, backgroundColor:"#315947", borderWidth:ScreenWidth*0.001,borderColor:"white", width:ScreenWidth*0.27, display:"flex", alignItems:"center", marginTop:50,borderRadius:ScreenWidth*1}}>
+               
+                 <Image  style={{width:14,height:14}} source={require("../../assets/../assets/images/camera/share.png")} />
+
+<Text style={{color:"white", textTransform:"capitalize", fontSize:15}}>Submit </Text>
+               
+                 </View>
+                 </TouchableOpacity>
+                 </View>
+ <View  style={{
+            backgroundColor: 'white',
+            flex: 1,
+            paddingTop:10,
+           padding:ScreenWidth*0.02,
+            borderColor: 'rgb(29,91,65)',
+            borderTopRightRadius: 30,
+            borderTopLeftRadius: 30,
+            marginTop: ScreenHeight * 0.04,
+          }}>
+           
+           <View style={{flexDirection:"row", justifyContent:"flex-end", alignItems:"center", gap:10, marginTop:10}}>
+            <Text style={{color:"black", fontSize:16, fontWeight:"600", textAlign:"center"}}>Shift</Text>
+              <Switch
+            value={true}
+          
+            trackColor={{ false: "#ccc", true: "#113117ff" }} // gray/off vs green/on
+            thumbColor={"white"}
+          />
+           </View>
+            <View style={{justifyContent:"center",alignItems:"center"}}>
+                        
+            <Text style={{ fontSize:ScreenWidth*0.05, fontWeight:"700" ,color:"black", }}> <Text style={{color:'rgb(29,91,65)'}}>A</Text>ttendance Table</Text>
+            </View>
+      {loading ? (
+               <View style={styles.centeredContainer}>
+               <LottieView
+                                          loop
+                                          autoPlay
+                                          source={require("../.././../assets/camera/loaers.json")}
+                                          style={{width:ScreenWidth*0.3,height:ScreenHeight*0.2}}
+                                        />
+             </View>
+     
+      ) : (
+        <>
+          {/* Show the staff image if no attendance data is available */}
+          {attendanceData.length === 0 ? (
+            <Image style={styles.attendancescreen}  />
+          ) : (
+            <>
+              {/* Table Header */}
+              {/* <View style={{  marginTop:ScreenHeight*0.05, justifyContent:"space-between", alignItems:"flex-start", flexDirection:"row"}}>
+                 <Text style={styles.present}>
+                Total Present:{ totalPresent}
+              </Text>
+              <Text style={styles.absent}>
+                Total Absent:{ totalAbsent}
+              </Text></View> */}
+              {/* <View style={styles.header}>
+              <Text style={styles.headerCell}>Date</Text>
+                <Text style={styles.headerCell}>Day</Text>
+                <Text style={styles.headerCell}>Attendance</Text>
+                <Text style={styles.headerCell}>Status</Text>
+              </View> */}
+
+              {/* Table Rows */}
+              {/* <FlatList
+                data={attendanceData}
+                keyExtractor={(item, index) => `${item.date}-${index}`}
+                renderItem={renderItem}
+              /> */
+              }
+               <View
+      
+        style={styles.tableBackground}
+        // imageStyle={styles.backgroundImage}
+      >
+        {/* Table Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerCell1}>Date</Text>
+          {/* <Text style={styles.headerCell}>Day</Text> */}
+          <Text style={styles.headerCellat}>Attendance</Text> 
+          <Text style={styles.headerCell}>In</Text> 
+          <Text style={styles.headerCell}>Out</Text> 
+          {/* <Text style={styles.headerCell}>Status</Text> */}
+        </View>
+
+        {/* Table Rows */}
+        <FlatList
+          data={ shiftdata}
+        
+          keyExtractor={(item, index) => `${item.date}-${index}`}
+          renderItem={renderItems}
+        />
+        
+      <View style={{display:"flex", flexDirection:'row', padding:10, height:ScreenHeight*0.06, alignItems:"center", justifyContent:"space-between",}}> 
+        <View style={{ display:"flex", flexDirection:"row", alignItems:"center"}}>
+          <Text style={{color:"black", fontSize:15,fontWeight:"bold"}}>
+         FullDay :
+          </Text>
+         <Text style={{color:"rgb(29,91,65)", fontWeight:"bold" ,fontSize:18}}>  {totalPresent}</Text>
+        </View>
+        <View style={{ display:"flex", flexDirection:"row", alignItems:"center"}}>
+          <Text style={{color:"black", fontSize:15,fontWeight:"bold"}}>
+         HalfDay :
+          </Text>
+         <Text style={{color:"rgb(29,91,65)", fontWeight:"bold" ,fontSize:18}}>  {totalhalfday}</Text>
+        </View>
+        <View style={{ display:"flex", flexDirection:"row", alignItems:"center"}}>
+          <Text style={{color:"black", fontSize:15,fontWeight:"bold"}}>
+      Total Absent :
+          </Text>
+         <Text style={{color:"red", fontWeight:"bold" ,fontSize:18}}>  {totalAbsent}</Text>
+        </View>
+      </View>
+      </View>
+            </>
+          )}
+        </>
+      )}
+
+      {/* Month Selection Modal */}
+      <Modal
+        transparent={true}
+        visible={isMonthModalVisible}
+        onRequestClose={() => setIsMonthModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <FlatList
+              data={months}
+              keyExtractor={(item) => item.value}
+              renderItem={({ item }) => (
+                <TouchableHighlight
+                  onPress={() => {
+                    setSelectedMonth(item.value);
+                    setIsMonthModalVisible(false);
+                  }}
+                  style={{padding: 10,
+                    borderBottomWidth: 1,
+                    borderBottomColor: '#ddd', backgroundColor:month.toString()===item.value ?"#e6e6e6":"white"}}
+                >
+                  <Text>{item.label}</Text>
+                </TouchableHighlight>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Year Selection Modal */}
+      <Modal
+        transparent={true}
+        visible={isYearModalVisible}
+        onRequestClose={() => setIsYearModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+            <FlatList
+              data={years}
+              keyExtractor={(item) => item.value}
+              renderItem={({ item }) => (
+                <TouchableHighlight
+                  onPress={() => {
+                    setSelectedYear(item.value);
+                    setIsYearModalVisible(false);
+                  }}
+                  style={styles.modalOption}
+                >
+                  <Text>{item.label}</Text>
+                </TouchableHighlight>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
+  </View>
+ </View>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    // padding: 10,
+    // backgroundColor: '#fff',
+    width:ScreenWidth*1
+  },
+  attendancescreen: {
+    width: 400,
+    height: 400,
+    alignSelf: 'center',
+    marginTop: 120,
+  },
+  present :{
+color:"rgb(37 99 235)"
+  },
+  absent:{
+color:"#ff0000"
+  },
+  dropdownContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: ScreenHeight*0.03,
+  },
+  dropdown: {
+    flex: 1,
+    marginHorizontal: 5,
+  },
+  centeredContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  selectedValue: {
+    padding: 10,
+    backgroundColor: '#eaeaea',
+    color:"black",
+    borderRadius: 5,
+  },
+  tableBackground: {
+    flex: 1,
+    // marginTop: 20,
+    borderRadius: 10,
+    overflow: 'hidden', // Ensures the image does not exceed the table boundary
+  },
+    redText: {
+    // color: '#ff0000',
+    color:"black"
+  },
+  black:{
+color:"black"
+  },
+  blueText: {
+    // color: 'blue',
+    color:"black"
+  },
+  backgroundImage: {
+    opacity: 0.15, // Adjust opacity for better readability of text
+  },
+  submitButton: {
+    backgroundColor: '"rgb(29,91,65)"',
+    padding: 10,
+    borderRadius: 5,
+    alignItems: 'center',
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  loadingText: {
+    textAlign: 'center',
+    marginTop: 20,
+    fontSize: 16,
+  },
+  header: {
+    flexDirection: 'row',
+    // backgroundColor: "rgb(29,91,65)",
+    // padding: 10,
+    borderRadius: 5,
+   justifyContent:"center",
+paddingVertical:10,
+  //  alignItems:"center",
+    marginTop:ScreenHeight*0.01,
+    height:ScreenWidth*0.11,
+  
+  },
+  headerCell: {
+    // flexDirection:"row",
+    display:"flex",
+    flex: 1,
+    fontWeight: '500',
+    textAlign: 'center',
+   alignItems:"center",
+   justifyContent:"center",
+  //  paddingTop:ScreenWidth*0.003,
+    color: "white"
+    ,
+    height:ScreenHeight*0.038,
+    paddingVertical:7,
+    fontSize:14,
+    backgroundColor:"rgb(29,91,65)",
+    // padding: 5,
+    borderRightWidth:1,
+    borderRightColor:"white",
+  },
+  headerCell1: {
+    // flexDirection:"row",
+    display:"flex",
+    flex: 1.4,
+    fontWeight: '500',
+    textAlign: 'center',
+   alignItems:"center",
+   justifyContent:"center",
+  //  paddingTop:ScreenWidth*0.003,
+    color: "white"
+    ,
+    height:ScreenHeight*0.038,
+    paddingVertical:7,
+    fontSize:14,
+    backgroundColor:"rgb(29,91,65)",
+    // padding: 5,
+    borderRightWidth:1,
+    borderRightColor:"white",
+  },
+  headerCellat: {
+    // flexDirection:"row",
+    display:"flex",
+    flex: 1.2,
+    fontWeight: '500',
+    textAlign: 'center',
+   alignItems:"center",
+   justifyContent:"center",
+  //  paddingTop:ScreenWidth*0.003,
+    color: "white"
+    ,
+    height:ScreenHeight*0.038,
+    paddingVertical:7,
+    fontSize:14,
+    backgroundColor:"rgb(29,91,65)",
+    // padding: 5,
+    borderRightWidth:1,
+    borderRightColor:"white",
+  },
+  row: {
+    flexDirection: 'row',
+    flex:1,
+    // backgroundColor:"green",
+    padding: ScreenWidth*0.03,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ccc',
+    // marginLeft:-20
+  
+  },
+    mainrow: {
+    flexDirection:"column",
+    flex:1,
+    alignItems:"center",
+    justifyContent:"center",
+    // backgroundColor:"green",
+    padding: ScreenWidth*0.03,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ccc',
+    // marginLeft:-20
+  
+  },
+  cell: {
+    flex: 1.4,
+flexDirection:"row",
+    textAlign: 'center',
+    // color:"blue"
+    color:"black",
+    fontSize:ScreenWidth*0.03,
+
+  },
+  cell1: {
+    flex: 1,
+    // backgroundColor:"red",
+    textAlign: 'center',
+    justifyContent:"center",
+    alignItems:"center",
+    // color:"blue"
+    color:"black",
+    fontSize:ScreenWidth*0.033,
+    // marginLeft:ScreenWidth*0.04,
+
+  },
+  cell2: {
+    flex: 1,
+    textAlign: 'center',
+    color:""
+  },
+  cell3: {
+    flex: 1,
+    textAlign: 'center',
+    color:""
+  },
+  cell4: {
+    flex: 1,
+    textAlign: 'center',
+    color:"blue"
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 5,
+    width: '80%',
+  },
+  modalOption: {
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+    
+  },
+  
+});
+
+export default AttendanceSheet;

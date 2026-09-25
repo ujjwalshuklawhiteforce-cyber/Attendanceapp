@@ -1,0 +1,740 @@
+package com.attendance.name.facematch
+
+import com.facebook.react.bridge.*
+import android.graphics.*
+import android.util.Base64
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.*
+import org.tensorflow.lite.Interpreter
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.math.*
+
+class FaceMatchModule(private val reactContext: ReactApplicationContext)
+    : ReactContextBaseJavaModule(reactContext) {
+
+    private var interpreter: Interpreter? = null
+    private val inputSize = 160
+    private val embeddingSize = 512
+
+    // ENHANCED Quality thresholds
+    private val MIN_FACE_SIZE = 140 // Increased for better quality
+    private val MIN_BRIGHTNESS = 65
+    private val MAX_BRIGHTNESS = 195
+    private val MIN_SHARPNESS = 18.0
+    private val MIN_EYE_OPEN_PROB = 0.35f
+    private val MIN_FACE_CONFIDENCE = 0.75f
+    
+    // IMPROVED THRESHOLDS - more accurate matching
+    private val MATCH_THRESHOLD_STRICT = 0.70f // Very high security
+    private val MATCH_THRESHOLD_BALANCED = 0.60f // Good balance
+    private val MATCH_THRESHOLD_LENIENT = 0.50f // More permissive
+    
+    private var currentThreshold = MATCH_THRESHOLD_BALANCED
+
+    private val detectorOptions = FaceDetectorOptions.Builder()
+        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+        .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
+        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
+        .setMinFaceSize(0.20f) // Increased to 20% for better detection
+        .setContourMode(FaceDetectorOptions.CONTOUR_MODE_ALL) // Enable contours
+        .build()
+
+    private val detector = FaceDetection.getClient(detectorOptions)
+
+    override fun getName(): String = "FaceMatchModule"
+
+    init {
+        try {
+            val assetFile = reactContext.assets.open("facenet.tflite")
+            val modelBytes = assetFile.readBytes()
+
+            val buffer = ByteBuffer.allocateDirect(modelBytes.size).apply {
+                order(ByteOrder.nativeOrder())
+                put(modelBytes)
+                rewind()
+            }
+
+            interpreter = Interpreter(buffer, Interpreter.Options().apply {
+                setNumThreads(4)
+                setUseNNAPI(true)
+            })
+
+            println("FaceMatchModule: Model loaded successfully")
+
+        } catch (e: Exception) {
+            println("MODEL LOAD ERROR => ${e.message}")
+        }
+    }
+
+    // ------------------ BASE64 decode with validation ---------------------
+    private fun decodeBase64(base64: String): Bitmap? {
+        return try {
+            val clean = base64.replace("data:image/[^;]+;base64,".toRegex(), "")
+            val bytes = Base64.decode(clean, Base64.DEFAULT)
+            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            
+            if (bmp != null && (bmp.width < 300 || bmp.height < 300)) {
+                println("Image resolution too low: ${bmp.width}x${bmp.height}")
+                return null
+            }
+            
+            bmp
+        } catch (e: Exception) {
+            println("Decode ERROR => ${e.message}")
+            null
+        }
+    }
+
+    // ------------------ ENHANCED Face Quality Check ---------------------
+    private fun checkQuality(face: Face, bmp: Bitmap): String? {
+        val box = face.boundingBox
+
+        // Size check
+        if (box.width() < MIN_FACE_SIZE || box.height() < MIN_FACE_SIZE) {
+            return "Face too small - move closer (${box.width()}x${box.height()})"
+        }
+
+        // Aspect ratio check
+        val aspectRatio = box.width().toFloat() / box.height().toFloat()
+        if (aspectRatio < 0.75f || aspectRatio > 1.35f) {
+            return "Face shape unusual - ensure full face visible"
+        }
+
+        // Stricter pose checks - critical for accuracy
+        if (abs(face.headEulerAngleY) > 12) {
+            return "Turn face forward (yaw: ${face.headEulerAngleY.toInt()}°)"
+        }
+
+        if (abs(face.headEulerAngleZ) > 10) {
+            return "Keep head straight (roll: ${face.headEulerAngleZ.toInt()}°)"
+        }
+
+        if (abs(face.headEulerAngleX) > 12) {
+            return "Look straight ahead (pitch: ${face.headEulerAngleX.toInt()}°)"
+        }
+
+        // Eye openness check
+        val leftEye = face.leftEyeOpenProbability
+        val rightEye = face.rightEyeOpenProbability
+        
+        if (leftEye != null && rightEye != null) {
+            if (leftEye < MIN_EYE_OPEN_PROB || rightEye < MIN_EYE_OPEN_PROB) {
+                return "Keep both eyes open and visible"
+            }
+        }
+
+        // Brightness check
+        val brightness = avgBrightness(bmp, box)
+        if (brightness < MIN_BRIGHTNESS) return "Too dark - improve lighting"
+        if (brightness > MAX_BRIGHTNESS) return "Too bright - reduce lighting"
+
+        // Sharpness check
+        val sharp = sharpness(bmp, box)
+        if (sharp < MIN_SHARPNESS) {
+            return "Image is blurry - hold steady"
+        }
+
+        // Landmark check
+        val landmarks = face.allLandmarks
+        if (landmarks.size < 6) {
+            return "Face features not detected clearly"
+        }
+
+        // Contrast check
+        val contrast = calculateContrast(bmp, box)
+        if (contrast < 25) {
+            return "Low contrast - improve lighting"
+        }
+
+        return null
+    }
+
+    private fun avgBrightness(bmp: Bitmap, rect: Rect): Int {
+        var total = 0
+        var count = 0
+        val step = 3
+        
+        for (y in rect.top until rect.bottom step step) {
+            for (x in rect.left until rect.right step step) {
+                if (x >= 0 && x < bmp.width && y >= 0 && y < bmp.height) {
+                    val p = bmp.getPixel(x, y)
+                    val b = (0.299 * Color.red(p) + 0.587 * Color.green(p) + 0.114 * Color.blue(p)).toInt()
+                    total += b
+                    count++
+                }
+            }
+        }
+        return if (count > 0) total / count else 0
+    }
+
+    private fun sharpness(bmp: Bitmap, rect: Rect): Double {
+        val list = mutableListOf<Int>()
+        val step = 2
+        
+        for (y in rect.top until rect.bottom step step) {
+            for (x in rect.left until rect.right step step) {
+                if (x >= 0 && x < bmp.width && y >= 0 && y < bmp.height) {
+                    val p = bmp.getPixel(x, y)
+                    list.add((Color.red(p) + Color.green(p) + Color.blue(p)) / 3)
+                }
+            }
+        }
+        
+        if (list.size < 2) return 0.0
+        
+        val mean = list.average()
+        val variance = list.map { (it - mean) * (it - mean) }.average()
+        return sqrt(variance)
+    }
+
+    private fun calculateContrast(bmp: Bitmap, rect: Rect): Int {
+        var min = 255
+        var max = 0
+        val step = 5
+        
+        for (y in rect.top until rect.bottom step step) {
+            for (x in rect.left until rect.right step step) {
+                if (x >= 0 && x < bmp.width && y >= 0 && y < bmp.height) {
+                    val p = bmp.getPixel(x, y)
+                    val gray = (Color.red(p) + Color.green(p) + Color.blue(p)) / 3
+                    min = minOf(min, gray)
+                    max = maxOf(max, gray)
+                }
+            }
+        }
+        
+        return max - min
+    }
+
+    // ------------------ IMPROVED Face Alignment ---------------------
+    private fun alignFace(bitmap: Bitmap, face: Face): Bitmap {
+        val leftEye = face.getLandmark(FaceLandmark.LEFT_EYE)
+        val rightEye = face.getLandmark(FaceLandmark.RIGHT_EYE)
+        
+        if (leftEye != null && rightEye != null) {
+            val leftPos = leftEye.position
+            val rightPos = rightEye.position
+            
+            // Calculate rotation angle
+            val deltaX = rightPos.x - leftPos.x
+            val deltaY = rightPos.y - leftPos.y
+            val angle = Math.toDegrees(atan2(deltaY.toDouble(), deltaX.toDouble())).toFloat()
+            
+            // Only rotate if angle is significant
+            if (abs(angle) > 2.0f) {
+                val matrix = Matrix()
+                
+                // Calculate center point between eyes
+                val centerX = (leftPos.x + rightPos.x) / 2
+                val centerY = (leftPos.y + rightPos.y) / 2
+                
+                matrix.postRotate(-angle, centerX, centerY)
+                
+                return Bitmap.createBitmap(
+                    bitmap, 0, 0, 
+                    bitmap.width, bitmap.height, 
+                    matrix, true
+                )
+            }
+        }
+        
+        return bitmap
+    }
+
+    // ------------------ ENHANCED Face Cropping ---------------------
+    private fun detectCrop(bitmap: Bitmap, cb: (Bitmap?, String?) -> Unit) {
+        val img = InputImage.fromBitmap(bitmap, 0)
+
+        detector.process(img)
+            .addOnSuccessListener { faces ->
+                if (faces.isEmpty()) {
+                    cb(null, "No face detected in image")
+                    return@addOnSuccessListener
+                }
+
+                if (faces.size > 1) {
+                    println("Warning: Multiple faces detected (${faces.size}), using largest")
+                }
+
+                val face = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }!!
+                val error = checkQuality(face, bitmap)
+                if (error != null) {
+                    cb(null, error)
+                    return@addOnSuccessListener
+                }
+
+                // Step 1: Align face based on eye positions
+                val aligned = alignFace(bitmap, face)
+                
+                // Re-detect face on aligned image for accurate bounding box
+                val alignedImg = InputImage.fromBitmap(aligned, 0)
+                detector.process(alignedImg)
+                    .addOnSuccessListener { alignedFaces ->
+                        if (alignedFaces.isEmpty()) {
+                            // Fallback to original if alignment failed
+                            cropAndProcess(bitmap, face, cb)
+                            return@addOnSuccessListener
+                        }
+                        
+                        val alignedFace = alignedFaces.maxByOrNull { 
+                            it.boundingBox.width() * it.boundingBox.height() 
+                        }!!
+                        
+                        cropAndProcess(aligned, alignedFace, cb)
+                    }
+                    .addOnFailureListener {
+                        // Fallback to original if re-detection failed
+                        cropAndProcess(bitmap, face, cb)
+                    }
+            }
+            .addOnFailureListener { e ->
+                cb(null, "Face detection failed: ${e.message}")
+            }
+    }
+
+    private fun cropAndProcess(bitmap: Bitmap, face: Face, cb: (Bitmap?, String?) -> Unit) {
+        val box = face.boundingBox
+        
+        // Calculate optimal padding based on face size
+        val horizontalPadding = (box.width() * 0.25f).toInt()
+        val verticalPadding = (box.height() * 0.30f).toInt() // More padding on top/bottom
+        
+        // Expand bounding box with padding
+        val left = max(0, box.left - horizontalPadding)
+        val top = max(0, box.top - verticalPadding)
+        val right = min(bitmap.width, box.right + horizontalPadding)
+        val bottom = min(bitmap.height, box.bottom + verticalPadding)
+        
+        val width = right - left
+        val height = bottom - top
+
+        // Ensure square crop for consistent processing
+        val size = max(width, height)
+        val centerX = left + width / 2
+        val centerY = top + height / 2
+        
+        val squareLeft = max(0, centerX - size / 2)
+        val squareTop = max(0, centerY - size / 2)
+        val squareRight = min(bitmap.width, squareLeft + size)
+        val squareBottom = min(bitmap.height, squareTop + size)
+        
+        val finalWidth = squareRight - squareLeft
+        val finalHeight = squareBottom - squareTop
+
+        val crop = Bitmap.createBitmap(bitmap, squareLeft, squareTop, finalWidth, finalHeight)
+        
+        // Apply multiple enhancement techniques
+        val enhanced = enhanceImageAdvanced(crop)
+
+        cb(enhanced, null)
+    }
+
+    // ------------------ ADVANCED Image Enhancement ---------------------
+    private fun enhanceImageAdvanced(bmp: Bitmap): Bitmap {
+        // Step 1: Normalize lighting with CLAHE-like approach
+        val normalized = normalizeLighting(bmp)
+        
+        // Step 2: Apply slight sharpening
+        val sharpened = sharpenImage(normalized)
+        
+        // Step 3: Color balance
+        val balanced = colorBalance(sharpened)
+        
+        return balanced
+    }
+
+    private fun normalizeLighting(bmp: Bitmap): Bitmap {
+        val width = bmp.width
+        val height = bmp.height
+        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        
+        val pixels = IntArray(width * height)
+        bmp.getPixels(pixels, 0, width, 0, 0, width, height)
+        
+        // Calculate mean and std dev
+        var sumR = 0L
+        var sumG = 0L
+        var sumB = 0L
+        
+        pixels.forEach { pixel ->
+            sumR += Color.red(pixel)
+            sumG += Color.green(pixel)
+            sumB += Color.blue(pixel)
+        }
+        
+        val count = pixels.size
+        val meanR = sumR / count
+        val meanG = sumG / count
+        val meanB = sumB / count
+        
+        // Normalize to target mean (127)
+        val targetMean = 127
+        
+        val normalizedPixels = pixels.map { pixel ->
+            val r = ((Color.red(pixel) - meanR) * 0.8 + targetMean).toInt().coerceIn(0, 255)
+            val g = ((Color.green(pixel) - meanG) * 0.8 + targetMean).toInt().coerceIn(0, 255)
+            val b = ((Color.blue(pixel) - meanB) * 0.8 + targetMean).toInt().coerceIn(0, 255)
+            
+            Color.rgb(r, g, b)
+        }.toIntArray()
+        
+        result.setPixels(normalizedPixels, 0, width, 0, 0, width, height)
+        return result
+    }
+
+    private fun sharpenImage(bmp: Bitmap): Bitmap {
+        val width = bmp.width
+        val height = bmp.height
+        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        
+        // Sharpening kernel (3x3)
+        val kernel = arrayOf(
+            floatArrayOf(0f, -0.5f, 0f),
+            floatArrayOf(-0.5f, 3f, -0.5f),
+            floatArrayOf(0f, -0.5f, 0f)
+        )
+        
+        for (y in 1 until height - 1) {
+            for (x in 1 until width - 1) {
+                var r = 0f
+                var g = 0f
+                var b = 0f
+                
+                for (ky in -1..1) {
+                    for (kx in -1..1) {
+                        val pixel = bmp.getPixel(x + kx, y + ky)
+                        val weight = kernel[ky + 1][kx + 1]
+                        
+                        r += Color.red(pixel) * weight
+                        g += Color.green(pixel) * weight
+                        b += Color.blue(pixel) * weight
+                    }
+                }
+                
+                result.setPixel(
+                    x, y,
+                    Color.rgb(
+                        r.toInt().coerceIn(0, 255),
+                        g.toInt().coerceIn(0, 255),
+                        b.toInt().coerceIn(0, 255)
+                    )
+                )
+            }
+        }
+        
+        return result
+    }
+
+    private fun colorBalance(bmp: Bitmap): Bitmap {
+        val width = bmp.width
+        val height = bmp.height
+        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        
+        val pixels = IntArray(width * height)
+        bmp.getPixels(pixels, 0, width, 0, 0, width, height)
+        
+        // Calculate average color channels
+        var avgR = 0L
+        var avgG = 0L
+        var avgB = 0L
+        
+        pixels.forEach { pixel ->
+            avgR += Color.red(pixel)
+            avgG += Color.green(pixel)
+            avgB += Color.blue(pixel)
+        }
+        
+        val count = pixels.size
+        avgR /= count
+        avgG /= count
+        avgB /= count
+        
+        val avgGray = (avgR + avgG + avgB) / 3
+        
+        // Balance each channel toward gray
+        val balancedPixels = pixels.map { pixel ->
+            val r = (Color.red(pixel) * avgGray / maxOf(avgR, 1)).toInt().coerceIn(0, 255)
+            val g = (Color.green(pixel) * avgGray / maxOf(avgG, 1)).toInt().coerceIn(0, 255)
+            val b = (Color.blue(pixel) * avgGray / maxOf(avgB, 1)).toInt().coerceIn(0, 255)
+            
+            Color.rgb(r, g, b)
+        }.toIntArray()
+        
+        result.setPixels(balancedPixels, 0, width, 0, 0, width, height)
+        return result
+    }
+
+    // ------------------ IMPROVED Preprocessing ---------------------
+    private fun preprocess(bmp: Bitmap): Array<Array<Array<FloatArray>>> {
+        val resized = Bitmap.createScaledBitmap(bmp, inputSize, inputSize, true)
+        val inp = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(3) } } }
+
+        for (y in 0 until inputSize) {
+            for (x in 0 until inputSize) {
+                val p = resized.getPixel(x, y)
+                // Standardized normalization for FaceNet
+                inp[0][y][x][0] = (Color.red(p) - 127.5f) / 128f
+                inp[0][y][x][1] = (Color.green(p) - 127.5f) / 128f
+                inp[0][y][x][2] = (Color.blue(p) - 127.5f) / 128f
+            }
+        }
+        return inp
+    }
+
+    private fun embedding(bmp: Bitmap): FloatArray? {
+        return try {
+            val input = preprocess(bmp)
+            val output = Array(1) { FloatArray(embeddingSize) }
+            interpreter?.run(input, output)
+            normalize(output[0])
+        } catch (e: Exception) {
+            println("Embedding error: ${e.message}")
+            null
+        }
+    }
+
+    private fun normalize(arr: FloatArray): FloatArray {
+        var sum = 0f
+        arr.forEach { sum += it * it }
+        val norm = sqrt(sum)
+        return if (norm > 0) arr.map { it / norm }.toFloatArray() else arr
+    }
+
+    private fun cosine(a: FloatArray, b: FloatArray): Float {
+        var dot = 0f
+        for (i in a.indices) dot += a[i] * b[i]
+        return dot.coerceIn(-1f, 1f)
+    }
+
+    private fun euclideanDistance(a: FloatArray, b: FloatArray): Float {
+        var sum = 0f
+        for (i in a.indices) {
+            val diff = a[i] - b[i]
+            sum += diff * diff
+        }
+        return sqrt(sum)
+    }
+
+    // ------------------ Set Match Threshold ---------------------
+    @ReactMethod
+    fun setMatchThreshold(mode: String, promise: Promise) {
+        currentThreshold = when (mode.lowercase()) {
+            "strict" -> MATCH_THRESHOLD_STRICT
+            "balanced" -> MATCH_THRESHOLD_BALANCED
+            "lenient" -> MATCH_THRESHOLD_LENIENT
+            else -> MATCH_THRESHOLD_BALANCED
+        }
+        
+        val result = Arguments.createMap().apply {
+            putString("mode", mode)
+            putDouble("threshold", currentThreshold.toDouble())
+        }
+        promise.resolve(result)
+    }
+
+    // =====================================================
+    // ENHANCED: Match with combined metrics
+    // =====================================================
+    @ReactMethod
+    fun compareFaces(img1: String, img2: String, promise: Promise) {
+        Thread {
+            try {
+                val bmp1 = decodeBase64(img1)
+                val bmp2 = decodeBase64(img2)
+
+                if (bmp1 == null || bmp2 == null) {
+                    promise.reject("DECODE_ERROR", "Image decode failed")
+                    return@Thread
+                }
+
+                detectCrop(bmp1) { face1, err1 ->
+                    if (err1 != null || face1 == null) {
+                        promise.reject("FACE1_ERROR", err1 ?: "Unknown error")
+                        return@detectCrop
+                    }
+
+                    detectCrop(bmp2) { face2, err2 ->
+                        if (err2 != null || face2 == null) {
+                            promise.reject("FACE2_ERROR", err2 ?: "Unknown error")
+                            return@detectCrop
+                        }
+
+                        val emb1 = embedding(face1)
+                        val emb2 = embedding(face2)
+
+                        if (emb1 == null || emb2 == null) {
+                            promise.reject("EMBED_ERROR", "Embedding extraction failed")
+                            return@detectCrop
+                        }
+
+                        val cosineSim = cosine(emb1, emb2)
+                        val eucDist = euclideanDistance(emb1, emb2)
+                        
+                        // Enhanced matching logic
+                        val match = cosineSim > currentThreshold && eucDist < 0.9f
+                        val pct = ((cosineSim + 1) / 2 * 100).coerceIn(0f, 100f)
+                        
+                        val confidence = when {
+                            cosineSim > 0.75f -> "Very High"
+                            cosineSim > 0.65f -> "High"
+                            cosineSim > 0.55f -> "Medium"
+                            else -> "Low"
+                        }
+
+                        val res = Arguments.createMap().apply {
+                            putBoolean("match", match)
+                            putDouble("similarity", cosineSim.toDouble())
+                            putDouble("percentage", pct.toDouble())
+                            putDouble("threshold", currentThreshold.toDouble())
+                            putDouble("euclideanDistance", eucDist.toDouble())
+                            putString("confidence", confidence)
+                        }
+
+                        reactContext.runOnUiQueueThread {
+                            promise.resolve(res)
+                        }
+                    }
+                }
+
+            } catch (e: Exception) {
+                promise.reject("ERROR", e.message)
+            }
+        }.start()
+    }
+
+    // =====================================================
+    // ENHANCED: Multi-reference matching with weighted average
+    // =====================================================
+    @ReactMethod
+    fun compareWithTwoRefs(ref1: String, ref2: String, target: String, promise: Promise) {
+        Thread {
+            try {
+                val bmp1 = decodeBase64(ref1)
+                val bmp2 = decodeBase64(ref2)
+                val bmpT = decodeBase64(target)
+
+                if (bmp1 == null || bmp2 == null || bmpT == null) {
+                    promise.reject("DECODE_ERROR", "One or more images failed to decode")
+                    return@Thread
+                }
+
+                detectCrop(bmp1) { face1, err1 ->
+                    if (err1 != null || face1 == null) {
+                        promise.reject("REF1_ERROR", err1 ?: "Unknown error")
+                        return@detectCrop
+                    }
+
+                    detectCrop(bmp2) { face2, err2 ->
+                        if (err2 != null || face2 == null) {
+                            promise.reject("REF2_ERROR", err2 ?: "Unknown error")
+                            return@detectCrop
+                        }
+
+                        detectCrop(bmpT) { faceT, errT ->
+                            if (errT != null || faceT == null) {
+                                promise.reject("TARGET_ERROR", errT ?: "Unknown error")
+                                return@detectCrop
+                            }
+
+                            val emb1 = embedding(face1)
+                            val emb2 = embedding(face2)
+                            val embT = embedding(faceT)
+
+                            if (emb1 == null || emb2 == null || embT == null) {
+                                promise.reject("EMBED_ERROR", "Embedding extraction failed")
+                                return@detectCrop
+                            }
+
+                            // Calculate individual similarities
+                            val sim1 = cosine(emb1, embT)
+                            val sim2 = cosine(emb2, embT)
+                            
+                            // Weighted average based on individual similarities
+                            val weight1 = sim1 / (sim1 + sim2)
+                            val weight2 = sim2 / (sim1 + sim2)
+                            
+                            val avgRef = FloatArray(embeddingSize)
+                            for (i in 0 until embeddingSize) {
+                                avgRef[i] = emb1[i] * weight1 + emb2[i] * weight2
+                            }
+                            
+                            val normalizedAvg = normalize(avgRef)
+
+                            val cosineSim = cosine(normalizedAvg, embT)
+                            val eucDist = euclideanDistance(normalizedAvg, embT)
+                            
+                            val match = cosineSim > currentThreshold && eucDist < 0.9f
+                            val pct = ((cosineSim + 1f) / 2f * 100f).coerceIn(0f, 100f)
+                            
+                            val confidence = when {
+                                cosineSim > 0.75f -> "Very High"
+                                cosineSim > 0.65f -> "High"
+                                cosineSim > 0.55f -> "Medium"
+                                else -> "Low"
+                            }
+
+                            val result = Arguments.createMap().apply {
+                                putBoolean("match", match)
+                                putDouble("similarity", cosineSim.toDouble())
+                                putDouble("percentage", pct.toDouble())
+                                putDouble("threshold", currentThreshold.toDouble())
+                                putDouble("euclideanDistance", eucDist.toDouble())
+                                putString("confidence", confidence)
+                                putDouble("ref1Similarity", sim1.toDouble())
+                                putDouble("ref2Similarity", sim2.toDouble())
+                            }
+
+                            reactContext.runOnUiQueueThread {
+                                promise.resolve(result)
+                            }
+                        }
+                    }
+                }
+
+            } catch (e: Exception) {
+                promise.reject("ERROR", e.message)
+            }
+        }.start()
+    }
+    // =====================================================
+    // Validate image quality
+    // =====================================================
+    @ReactMethod
+    fun validateImageQuality(image: String, promise: Promise) {
+        Thread {
+            try {
+                val bmp = decodeBase64(image)
+                if (bmp == null) {
+                    promise.reject("DECODE_ERROR", "Image decode failed")
+                    return@Thread
+                }
+
+                detectCrop(bmp) { face, err ->
+                    if (err != null || face == null) {
+                        val result = Arguments.createMap().apply {
+                            putBoolean("valid", false)
+                            putString("error", err ?: "Unknown error")
+                        }
+                        reactContext.runOnUiQueueThread {
+                            promise.resolve(result)
+                        }
+                        return@detectCrop
+                    }
+
+                    val result = Arguments.createMap().apply {
+                        putBoolean("valid", true)
+                        putString("message", "Image quality is good")
+                    }
+
+                    reactContext.runOnUiQueueThread {
+                        promise.resolve(result)
+                    }
+                }
+
+            } catch (e: Exception) {
+                promise.reject("ERROR", e.message)
+            }
+        }.start()
+    }
+}

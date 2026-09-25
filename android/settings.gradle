@@ -1,0 +1,30 @@
+// rootProject.name = 'White-Force Attendance'
+// apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesSettingsGradle(settings)
+// include ':app'
+// includeBuild('../node_modules/@react-native/gradle-plugin')
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "org.jetbrains.kotlin.android" ||
+                requested.id.id == "org.jetbrains.kotlin.jvm") {
+                useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:1.8.22")
+            }
+        }
+    }
+}
+
+rootProject.name = 'White-Force Attendance'
+
+apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle")
+applyNativeModulesSettingsGradle(settings)
+
+include(":app")
+
+// 🔥 KEEP THIS — but now Kotlin is forced correctly
+includeBuild("../node_modules/@react-native/gradle-plugin")

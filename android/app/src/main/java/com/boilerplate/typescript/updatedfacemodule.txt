@@ -1,0 +1,434 @@
+package com.attendance.name.facematch
+
+import com.facebook.react.bridge.*
+import org.tensorflow.lite.Interpreter
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.Rect
+import android.util.Base64
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.Face
+import com.google.mlkit.vision.face.FaceDetectorOptions
+import com.google.mlkit.vision.face.FaceDetection
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.math.sqrt
+import kotlin.math.abs
+
+class FaceNetModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+    private var interpreter: Interpreter? = null
+    private val inputSize = 160
+    private val embeddingSize = 512
+
+    // Optimized detector for real-time performance
+    private val detectorOptions = FaceDetectorOptions.Builder()
+        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+        .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
+        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
+        .setMinFaceSize(0.15f) // Minimum 15% of image
+        .enableTracking()
+        .build()
+
+    private val detector = FaceDetection.getClient(detectorOptions)
+
+    // Quality thresholds
+    private val MIN_FACE_SIZE = 80 // pixels
+    private val MIN_BRIGHTNESS = 40
+    private val MAX_BRIGHTNESS = 220
+    private val MIN_SHARPNESS = 10.0
+    private val MATCH_THRESHOLD = 0.65f // Cosine similarity threshold
+    private val HIGH_CONFIDENCE_THRESHOLD = 0.75f
+
+    override fun getName(): String = "FaceNetModule"
+
+    init {
+        try {
+            val assetFile = reactApplicationContext.assets.open("facenet.tflite")
+            val modelBytes = assetFile.readBytes()
+
+            val buffer = ByteBuffer.allocateDirect(modelBytes.size).apply {
+                order(ByteOrder.nativeOrder())
+                put(modelBytes)
+                rewind()
+            }
+
+            interpreter = Interpreter(buffer, Interpreter.Options().apply {
+                setNumThreads(4)
+                setUseNNAPI(true)
+            })
+
+            println("FaceNetModule: Model loaded successfully")
+
+        } catch (e: Exception) {
+            println("FaceNetModule ERROR loading model => ${e.message}")
+        }
+    }
+
+    private fun decodeBase64ToBitmap(base64Str: String): Bitmap? {
+        return try {
+            val cleanBase64 = base64Str.replace("data:image/[^;]+;base64,".toRegex(), "")
+            val decodedBytes = Base64.decode(cleanBase64, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+        } catch (e: Exception) {
+            println("FaceNetModule decode ERROR => ${e.message}")
+            null
+        }
+    }
+
+    // Detect and crop face from image
+    private fun detectAndCropFace(bitmap: Bitmap, callback: (Bitmap?, Face?, String?) -> Unit) {
+        val image = InputImage.fromBitmap(bitmap, 0)
+        
+        detector.process(image)
+            .addOnSuccessListener { faces ->
+                if (faces.isEmpty()) {
+                    callback(null, null, "No face detected")
+                    return@addOnSuccessListener
+                }
+
+                // Get the largest face
+                val face = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }!!
+                
+                // Quality checks
+                val qualityIssue = checkFaceQuality(face, bitmap)
+                if (qualityIssue != null) {
+                    callback(null, face, qualityIssue)
+                    return@addOnSuccessListener
+                }
+
+                // Expand bounding box slightly for better context
+                val bbox = expandBoundingBox(face.boundingBox, bitmap, 0.2f)
+                
+                // Crop face
+                val croppedFace = Bitmap.createBitmap(
+                    bitmap,
+                    bbox.left,
+                    bbox.top,
+                    bbox.width(),
+                    bbox.height()
+                )
+
+                callback(croppedFace, face, null)
+            }
+            .addOnFailureListener { e ->
+                callback(null, null, "Face detection failed: ${e.message}")
+            }
+    }
+
+    private fun checkFaceQuality(face: Face, bitmap: Bitmap): String? {
+        val bbox = face.boundingBox
+
+        // Check face size
+        if (bbox.width() < MIN_FACE_SIZE || bbox.height() < MIN_FACE_SIZE) {
+            return "Face too small (move closer)"
+        }
+
+        // Check if face is too close to edge
+        val margin = 20
+        if (bbox.left < margin || bbox.top < margin || 
+            bbox.right > bitmap.width - margin || 
+            bbox.bottom > bitmap.height - margin) {
+            return "Face too close to edge"
+        }
+
+        // Check head rotation (Euler angles)
+        val headEulerAngleY = face.headEulerAngleY // Left-right rotation
+        val headEulerAngleZ = face.headEulerAngleZ // Tilt
+
+        if (abs(headEulerAngleY) > 20) {
+            return "Face not frontal (turn face towards camera)"
+        }
+
+        if (abs(headEulerAngleZ) > 15) {
+            return "Head tilted too much"
+        }
+
+        // Check brightness
+        val avgBrightness = calculateAverageBrightness(bitmap, bbox)
+        if (avgBrightness < MIN_BRIGHTNESS) {
+            return "Too dark (need better lighting)"
+        }
+        if (avgBrightness > MAX_BRIGHTNESS) {
+            return "Too bright (reduce lighting)"
+        }
+
+        // Check if eyes are open (basic liveness check)
+        if (face.leftEyeOpenProbability != null && face.rightEyeOpenProbability != null) {
+            val leftEyeOpen = face.leftEyeOpenProbability!! > 0.5
+            val rightEyeOpen = face.rightEyeOpenProbability!! > 0.5
+            
+            if (!leftEyeOpen || !rightEyeOpen) {
+                return "Please open your eyes"
+            }
+        }
+
+        // Check sharpness
+        val sharpness = calculateSharpness(bitmap, bbox)
+        if (sharpness < MIN_SHARPNESS) {
+            return "Image too blurry (hold steady)"
+        }
+
+        return null // All quality checks passed
+    }
+
+    private fun expandBoundingBox(bbox: Rect, bitmap: Bitmap, margin: Float): Rect {
+        val expandX = (bbox.width() * margin).toInt()
+        val expandY = (bbox.height() * margin).toInt()
+
+        return Rect(
+            (bbox.left - expandX).coerceAtLeast(0),
+            (bbox.top - expandY).coerceAtLeast(0),
+            (bbox.right + expandX).coerceAtMost(bitmap.width),
+            (bbox.bottom + expandY).coerceAtMost(bitmap.height)
+        )
+    }
+
+    private fun calculateAverageBrightness(bitmap: Bitmap, bbox: Rect): Int {
+        var totalBrightness = 0
+        var pixelCount = 0
+
+        for (y in bbox.top until bbox.bottom step 5) {
+            for (x in bbox.left until bbox.right step 5) {
+                val pixel = bitmap.getPixel(x, y)
+                val brightness = (Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)) / 3
+                totalBrightness += brightness
+                pixelCount++
+            }
+        }
+
+        return if (pixelCount > 0) totalBrightness / pixelCount else 0
+    }
+
+    private fun calculateSharpness(bitmap: Bitmap, bbox: Rect): Double {
+        // Laplacian variance method for sharpness
+        var variance = 0.0
+        val pixels = mutableListOf<Int>()
+
+        for (y in bbox.top until bbox.bottom.coerceAtMost(bitmap.height)) {
+            for (x in bbox.left until bbox.right.coerceAtMost(bitmap.width)) {
+                val pixel = bitmap.getPixel(x, y)
+                val gray = (Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)) / 3
+                pixels.add(gray)
+            }
+        }
+
+        if (pixels.size < 2) return 0.0
+
+        val mean = pixels.average()
+        variance = pixels.map { (it - mean) * (it - mean) }.average()
+
+        return variance
+    }
+
+    private fun preprocessImage(bitmap: Bitmap): Array<Array<Array<FloatArray>>> {
+        val resized = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
+        val input = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(3) } } }
+
+        for (y in 0 until inputSize) {
+            for (x in 0 until inputSize) {
+                val pixel = resized.getPixel(x, y)
+                // Standard normalization for FaceNet
+                input[0][y][x][0] = (Color.red(pixel) - 127.5f) / 128f
+                input[0][y][x][1] = (Color.green(pixel) - 127.5f) / 128f
+                input[0][y][x][2] = (Color.blue(pixel) - 127.5f) / 128f
+            }
+        }
+
+        return input
+    }
+
+    private fun getEmbedding(bitmap: Bitmap): FloatArray? {
+        val input = preprocessImage(bitmap)
+        val output = Array(1) { FloatArray(embeddingSize) }
+
+        interpreter?.run(input, output)
+        val normalized = normalizeEmbedding(output[0])
+
+        return normalized
+    }
+
+    private fun normalizeEmbedding(embedding: FloatArray): FloatArray {
+        var norm = 0f
+        embedding.forEach { norm += it * it }
+        norm = sqrt(norm)
+
+        if (norm == 0f) return embedding
+
+        val result = FloatArray(embedding.size)
+        for (i in embedding.indices) result[i] = embedding[i] / norm
+        return result
+    }
+
+    private fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
+        var dot = 0f
+        for (i in a.indices) {
+            dot += a[i] * b[i]
+        }
+        return dot.coerceIn(-1f, 1f)
+    }
+
+    // =====================================================================
+    // REAL-TIME FACE MATCHING - Compare with reference embeddings
+    // =====================================================================
+    @ReactMethod
+    fun matchFaceRealTime(testImageBase64: String, referenceImages: ReadableArray, promise: Promise) {
+        Thread {
+            try {
+                val testBitmap = decodeBase64ToBitmap(testImageBase64)
+                    ?: throw Exception("Failed to decode test image")
+
+                // Detect and crop face from test image
+                detectAndCropFace(testBitmap) { testFace, face, error ->
+                    if (error != null) {
+                        reactApplicationContext.runOnUiQueueThread {
+                            promise.reject("QUALITY_ERROR", error)
+                        }
+                        return@detectAndCropFace
+                    }
+
+                    if (testFace == null) {
+                        reactApplicationContext.runOnUiQueueThread {
+                            promise.reject("NO_FACE", "No face detected in test image")
+                        }
+                        return@detectAndCropFace
+                    }
+
+                    // Get embedding for test image
+                    val testEmbedding = getEmbedding(testFace)
+                        ?: throw Exception("Failed to extract test embedding")
+
+                    // Process reference images
+                    val refEmbeddings = mutableListOf<FloatArray>()
+                    var processedRefs = 0
+
+                    for (i in 0 until referenceImages.size()) {
+                        val base64 = referenceImages.getString(i) ?: continue
+                        val refBitmap = decodeBase64ToBitmap(base64) ?: continue
+
+                        detectAndCropFace(refBitmap) { refFace, _, refError ->
+                            if (refFace != null && refError == null) {
+                                val embedding = getEmbedding(refFace)
+                                if (embedding != null) {
+                                    refEmbeddings.add(embedding)
+                                }
+                            }
+
+                            processedRefs++
+
+                            // When all references processed
+                            if (processedRefs == referenceImages.size()) {
+                                if (refEmbeddings.isEmpty()) {
+                                    reactApplicationContext.runOnUiQueueThread {
+                                        promise.reject("NO_REF_FACES", "No valid faces in reference images")
+                                    }
+                                    return@detectAndCropFace
+                                }
+
+                                // Calculate similarities with all references
+                                val similarities = refEmbeddings.map { refEmb ->
+                                    cosineSimilarity(testEmbedding, refEmb)
+                                }
+
+                                // Use maximum similarity
+                                val maxSimilarity = similarities.maxOrNull() ?: 0f
+                                val avgSimilarity = similarities.average().toFloat()
+
+                                // Determine match
+                                val isMatch = maxSimilarity >= MATCH_THRESHOLD
+                                val confidence = when {
+                                    maxSimilarity >= HIGH_CONFIDENCE_THRESHOLD -> "high"
+                                    maxSimilarity >= MATCH_THRESHOLD -> "medium"
+                                    else -> "low"
+                                }
+
+                                println("FaceNetModule: Max Similarity => $maxSimilarity")
+                                println("FaceNetModule: Avg Similarity => $avgSimilarity")
+                                println("FaceNetModule: Match => $isMatch ($confidence confidence)")
+
+                                val result = Arguments.createMap().apply {
+                                    putBoolean("isMatch", isMatch)
+                                    putDouble("similarity", maxSimilarity.toDouble())
+                                    putDouble("avgSimilarity", avgSimilarity.toDouble())
+                                    putString("confidence", confidence)
+                                    putDouble("threshold", MATCH_THRESHOLD.toDouble())
+                                    putInt("referencesUsed", refEmbeddings.size)
+                                }
+
+                                reactApplicationContext.runOnUiQueueThread {
+                                    promise.resolve(result)
+                                }
+                            }
+                        }
+                    }
+                }
+
+            } catch (e: Exception) {
+                println("FaceNetModule ERROR => ${e.message}")
+                reactApplicationContext.runOnUiQueueThread {
+                    promise.reject("FACENET_ERROR", e.message)
+                }
+            }
+        }.start()
+    }
+
+    // =====================================================================
+    // ENROLL FACE - Extract and validate embedding for enrollment
+    // =====================================================================
+    @ReactMethod
+    fun enrollFace(imageBase64: String, promise: Promise) {
+        Thread {
+            try {
+                val bitmap = decodeBase64ToBitmap(imageBase64)
+                    ?: throw Exception("Failed to decode image")
+
+                detectAndCropFace(bitmap) { croppedFace, face, error ->
+                    if (error != null) {
+                        reactApplicationContext.runOnUiQueueThread {
+                            promise.reject("QUALITY_ERROR", error)
+                        }
+                        return@detectAndCropFace
+                    }
+
+                    if (croppedFace == null) {
+                        reactApplicationContext.runOnUiQueueThread {
+                            promise.reject("NO_FACE", "No face detected")
+                        }
+                        return@detectAndCropFace
+                    }
+
+                    val embedding = getEmbedding(croppedFace)
+                        ?: throw Exception("Failed to extract embedding")
+
+                    // Convert embedding to array for storage
+                    val embeddingArray = Arguments.createArray()
+                    embedding.forEach { embeddingArray.pushDouble(it.toDouble()) }
+
+                    val result = Arguments.createMap().apply {
+                        putArray("embedding", embeddingArray)
+                        putString("status", "success")
+                        putDouble("faceWidth", face?.boundingBox?.width()?.toDouble() ?: 0.0)
+                        putDouble("faceHeight", face?.boundingBox?.height()?.toDouble() ?: 0.0)
+                    }
+
+                    reactApplicationContext.runOnUiQueueThread {
+                        promise.resolve(result)
+                    }
+                }
+
+            } catch (e: Exception) {
+                println("FaceNetModule ERROR => ${e.message}")
+                reactApplicationContext.runOnUiQueueThread {
+                    promise.reject("ENROLL_ERROR", e.message)
+                }
+            }
+        }.start()
+    }
+
+    override fun onCatalystInstanceDestroy() {
+        interpreter?.close()
+        detector.close()
+        println("FaceNetModule destroyed")
+        super.onCatalystInstanceDestroy()
+    }
+}  

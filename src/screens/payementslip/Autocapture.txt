@@ -1,0 +1,732 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { View, StyleSheet, Text, TouchableOpacity, Platform, NativeModules, ActivityIndicator, Alert } from 'react-native';
+import { Camera, useCameraDevices } from 'react-native-vision-camera';
+import RNFS from 'react-native-fs';
+import FaceDetection from '@react-native-ml-kit/face-detection';
+import Theme from 'FaceEmbading/Theme';
+import ImageResizer from 'react-native-image-resizer';
+import { request, openSettings as RNPOpenSettings, PERMISSIONS, RESULTS } from "react-native-permissions";
+import { XIcon } from 'assets/Svg/svg';
+import { ScreenHeight, ScreenWidth } from '@freakycoder/react-native-helpers';
+import Svg, { Rect, Defs, Mask, Ellipse } from "react-native-svg";
+
+const { FaceNetModule } = NativeModules;
+
+export default function FaceCaptureModalforfacnet({ onCapture }) {
+
+  const [faceAligned, setFaceAligned] = useState(false);
+  const [permissionStatus, setPermissionStatus] = useState('loading');
+  const [device, setDevice] = useState(null);
+  const [statusMessage, setStatusMessage] = useState("अपना चेहरा फ्रेम में रखें");
+  const [livenessStatus, setLivenessStatus] = useState(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [cameraScore, setCameraScore] = useState(0);
+  const [faceSize, setFaceSize] = useState(null);
+  const [alignmentDuration, setAlignmentDuration] = useState(0);
+  const [debugInfo, setDebugInfo] = useState(null); // Debug info display
+
+  const cameraRef = useRef(null);
+  const devices = useCameraDevices();
+
+  const processingRef = useRef(false);
+  const capturedRef = useRef(false);
+  const alignmentTimerRef = useRef(null);
+  const alignmentStartRef = useRef(null);
+  const retryCountRef = useRef(0);
+
+  /* ---------------- RELAXED OVAL CONFIGURATION ---------------- */
+  const RELAXED_OVAL_CONFIG = {
+    MIN_FACE_WIDTH: 0.25,
+    MIN_FACE_HEIGHT: 0.22,
+    MAX_FACE_WIDTH: 0.75,
+    MAX_FACE_HEIGHT: 0.70,
+    MIN_X: 0.15,
+    MAX_X: 0.85,
+    MIN_Y: 0.20,
+    MAX_Y: 0.80,
+    STABILITY_DURATION: 1500,
+  };
+
+  /* ---------------- CAMERA QUALITY ---------------- */
+  function getCameraQualityPercentage(device) {
+    if (!device?.formats?.length) return 0;
+
+    let score = 0;
+
+    const resolutions = device.formats
+      .filter(f => f?.videoWidth && f?.videoHeight)
+      .map(f => f.videoWidth * f.videoHeight);
+
+    const maxPixels = resolutions.length ? Math.max(...resolutions) : 0;
+    const resolutionScore = Math.min(35, (maxPixels / 8_000_000) * 35);
+    score += resolutionScore;
+
+    const fpsValues = device.formats.flatMap(f =>
+      Array.isArray(f.frameRateRanges)
+        ? f.frameRateRanges.map(r => r.maxFrameRate || 0)
+        : []
+    );
+
+    const maxFps = fpsValues.length ? Math.max(...fpsValues) : 0;
+    const fpsScore = Math.min(25, (maxFps / 60) * 25);
+    score += fpsScore;
+
+    if (device.hardwareLevel === 'LEVEL_3') score += 15;
+    else if (device.hardwareLevel?.toLowerCase() === 'full') score += 12;
+    else if (device.hardwareLevel === 'LIMITED') score += 7;
+
+    const zoomScore = Math.min(10, ((device.maxZoom || 1) / 10) * 10);
+    score += zoomScore;
+
+    const formatScore = Math.min(15, (device.formats.length / 300) * 15);
+    score += formatScore;
+
+    return Math.round(Math.min(100, score));
+  }
+
+  useEffect(() => {
+    if (device) {
+      const quality = getCameraQualityPercentage(device);
+      setCameraScore(quality);
+      console.log(`📱 Camera Quality: ${quality}/100`);
+    }
+  }, [device]);
+
+  /* ---------------- PERMISSION ---------------- */
+  useEffect(() => { 
+    (async () => {
+      try {
+        const status = Camera.getCameraPermissionStatus();
+        if (status === 'not-determined') {
+          const req = await Camera.requestCameraPermission();
+          setPermissionStatus(req);
+        } else {
+          setPermissionStatus(status);
+        }
+      } catch {
+        setPermissionStatus("denied");
+      }
+    })();
+  }, []);
+
+  async function askCameraPermission() {
+    const permission =
+      Platform.OS === "ios"
+        ? PERMISSIONS.IOS.CAMERA
+        : PERMISSIONS.ANDROID.CAMERA;
+
+    const result = await request(permission);
+    if (result === RESULTS.GRANTED) {
+      setPermissionStatus("granted");
+    } else {
+      RNPOpenSettings();
+      onCapture("");
+    }
+  }
+
+  useEffect(() => {
+    if (!devices) return;
+
+    if (permissionStatus === "granted" || permissionStatus === "authorized") {
+      const front = devices.find(d => d.position === "front") || devices[0];
+      setDevice(front);
+    }
+
+    if (permissionStatus === "denied") askCameraPermission();
+  }, [permissionStatus, devices]);
+
+  /* ---------------- FACE DETECTION LOOP ---------------- */
+  useEffect(() => {
+    if (!device || !cameraRef.current) return;
+
+    const interval = setInterval(async () => {
+      if (processingRef.current || capturedRef.current || isCapturing) return;
+      processingRef.current = true;
+
+      let snapshotPath;
+
+      try {
+        const snap = await cameraRef.current.takeSnapshot({
+          quality: 0.4,
+          skipMetadata: true,
+        });
+
+        snapshotPath = snap.path;
+        const uri = "file://" + snap.path;
+
+        const faces = await FaceDetection.detect(uri, {
+          classificationMode: "all",
+        });
+
+        if (!faces.length) {
+          setFaceAligned(false);
+          setFaceSize(null);
+          setAlignmentDuration(0);
+          if (alignmentStartRef.current) {
+            alignmentStartRef.current = null;
+          }
+          setStatusMessage("अपना चेहरा फ्रेम में रखें");
+          return;
+        }
+
+        const face = faces[0];
+        const validationResult = validateRelaxedFacePosition(face, snap.width, snap.height);
+        
+        setFaceAligned(validationResult.isValid);
+        setFaceSize(validationResult.size);
+        
+        if (validationResult.isValid) {
+          if (!alignmentStartRef.current) {
+            alignmentStartRef.current = Date.now();
+          }
+          
+          const duration = Date.now() - alignmentStartRef.current;
+          setAlignmentDuration(duration);
+          
+          const remainingSeconds = Math.ceil((RELAXED_OVAL_CONFIG.STABILITY_DURATION - duration) / 1000);
+          
+          if (duration < RELAXED_OVAL_CONFIG.STABILITY_DURATION) {
+            setStatusMessage(`स्थिर रहें... ${remainingSeconds}s`);
+          } else {
+            setStatusMessage("परफेक्ट! कैप्चर हो रहा है...");
+            
+            if (!capturedRef.current && !isCapturing) {
+              capturedRef.current = true;
+              setIsCapturing(true);
+              clearInterval(interval);
+              capturePhoto();
+            }
+          }
+        } else {
+          if (alignmentStartRef.current) {
+            alignmentStartRef.current = null;
+          }
+          setAlignmentDuration(0);
+          setStatusMessage(validationResult.message);
+        }
+
+      } catch (e) {
+        console.log("Face detection error:", e);
+      } finally {
+        if (snapshotPath) RNFS.unlink(snapshotPath).catch(() => {});
+        processingRef.current = false;
+      }
+    }, 200);
+
+    return () => {
+      clearInterval(interval);
+      if (alignmentTimerRef.current) {
+        clearTimeout(alignmentTimerRef.current);
+      }
+    };
+  }, [device, isCapturing]);
+
+  /* ---------------- FACE VALIDATION ---------------- */
+  function validateRelaxedFacePosition(bounds, w, h) {
+    if (!bounds?.frame) {
+      return { isValid: false, message: "कोई चेहरा नहीं मिला", size: null };
+    }
+
+    const f = bounds.frame;
+    const cfg = RELAXED_OVAL_CONFIG;
+
+    const x = f.left / w;
+    const y = f.top / h;
+    const fw = f.width / w;
+    const fh = f.height / h;
+
+    const size = {
+      widthPercent: (fw * 100).toFixed(1),
+      heightPercent: (fh * 100).toFixed(1),
+      pixelWidth: f.width.toFixed(0),
+      pixelHeight: f.height.toFixed(0)
+    };
+
+    if (fw < cfg.MIN_FACE_WIDTH || fh < cfg.MIN_FACE_HEIGHT) {
+      return { isValid: false, message: "कैमरे के करीब आएं", size };
+    }
+
+    if (fw > cfg.MAX_FACE_WIDTH || fh > cfg.MAX_FACE_HEIGHT) {
+      return { isValid: false, message: "थोड़ा पीछे हटें", size };
+    }
+
+    const isPositionValid = 
+      x >= cfg.MIN_X && 
+      x + fw <= cfg.MAX_X && 
+      y >= cfg.MIN_Y && 
+      y + fh <= cfg.MAX_Y;
+
+    if (!isPositionValid) {
+      return { isValid: false, message: "चेहरे को बीच में रखें", size };
+    }
+
+    return { isValid: true, message: "परफेक्ट! स्थिर रहें...", size };
+  }
+
+  /* ---------------- IMPROVED CAPTURE WITH ERROR HANDLING ---------------- */
+  async function capturePhoto() {
+    const startTime = Date.now();
+    
+    try {
+      if (!cameraRef.current) {
+        throw new Error("Camera reference not available");
+      }
+
+      console.log("========================================");
+      console.log("📸 STARTING CAPTURE PROCESS");
+      console.log("   Camera Quality:", cameraScore);
+      console.log("   Retry Count:", retryCountRef.current);
+      console.log("========================================");
+
+      setStatusMessage("कैप्चर हो रहा है...");
+
+      // Step 1: Take photo
+      const photo = await cameraRef.current.takePhoto({
+        qualityPrioritization: "quality",
+        skipMetadata: false,
+        enableShutterSound: false,
+      });
+
+      console.log("✅ Photo captured:", {
+        width: photo.width,
+        height: photo.height,
+        path: photo.path
+      });
+
+      // Step 2: Determine optimal rotation based on device
+      // Realme phones often need 0° or 90° instead of 270°
+      const rotationAngle = Platform.OS === 'android' ? 0 : 270;
+      
+      console.log(`🔄 Resizing with rotation: ${rotationAngle}°`);
+
+      // Step 3: Resize with appropriate settings for good cameras
+      const maxDimension = cameraScore >= 70 ? 1024 : 800;
+      const resizeWidth = Math.min(photo.width, maxDimension);
+      const resizeHeight = Math.min(photo.height, maxDimension);
+
+      const resized = await ImageResizer.createResizedImage(
+        "file://" + photo.path,
+        resizeWidth,
+        resizeHeight,
+        "JPEG",
+        90, // Slightly reduced quality to prevent memory issues
+        rotationAngle
+      );
+
+      console.log("✅ Image resized:", {
+        uri: resized.uri,
+        size: resized.size
+      });
+
+      // Step 4: Convert to base64 with size check
+      const fileSizeMB = resized.size / (1024 * 1024);
+      console.log(`📦 File size: ${fileSizeMB.toFixed(2)} MB`);
+
+      if (fileSizeMB > 10) {
+        throw new Error(`Image too large: ${fileSizeMB.toFixed(2)}MB`);
+      }
+
+      setStatusMessage("प्रोसेसिंग...");
+
+      const base64Image = await RNFS.readFile(
+        resized.uri.replace("file://", ""), 
+        'base64'
+      );
+
+      console.log(`✅ Base64 conversion complete: ${(base64Image.length / 1024).toFixed(0)}KB`);
+
+      setStatusMessage("लाइवनेस जांच जारी...");
+
+      // Step 5: Call FaceNet module with timeout
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Processing timeout (30s)")), 30000)
+      );
+
+      const resultPromise = FaceNetModule.captureAndGetEmbedding(base64Image);
+
+      const result = await Promise.race([resultPromise, timeoutPromise]);
+
+      const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`⏱️ Total processing time: ${processingTime}s`);
+
+      console.log("========================================");
+      console.log("🎯 LIVENESS RESULT:");
+      console.log("   Is Live:", result.isLive);
+      console.log("   Score:", result.livenessScore);
+      console.log("   Label:", result.livenessLabel);
+      console.log("   Confidence:", result.livenessConfidence);
+      console.log("   Camera Quality:", result.cameraQuality);
+      console.log("   Beauty Mode:", result.beautyModeDetected);
+      console.log("   Print/Screen:", result.isPrintOrScreen);
+      console.log("========================================");
+
+      // Store debug info
+      setDebugInfo({
+        quality: cameraScore,
+        processingTime,
+        score: result.livenessScore,
+        label: result.livenessLabel,
+        beautyMode: result.beautyModeDetected
+      });
+
+      // Check liveness result
+      if (!result.isLive) {
+        console.log("❌ LIVENESS CHECK FAILED");
+        console.log("   Reason:", result.livenessLabel);
+        
+        // Special handling for different failure types
+        let errorTitle = "❌ लाइवनेस सत्यापन विफल";
+        let errorMessage = "कृपया असली चेहरा दिखाएं";
+        let suggestions = "• अच्छी रोशनी में जाएं\n• सीधे कैमरे में देखें\n• फोन को स्थिर रखें";
+        
+        if (result.beautyModeDetected) {
+          errorMessage = "ब्यूटी मोड पहचाना गया";
+          suggestions = "• कैमरा सेटिंग्स खोलें\n• Beauty/Beautify Mode बंद करें\n• AI Enhancement बंद करें";
+          console.log("⚠️ Beauty mode detected - advising user");
+        } else if (result.isPrintOrScreen) {
+          errorMessage = "प्रिंट/स्क्रीन डिटेक्ट हुई";
+          suggestions = "• असली चेहरा दिखाएं\n• फोटो या स्क्रीन का उपयोग न करें\n• अच्छी रोशनी में जाएं";
+          console.log("⚠️ Print/Screen detected");
+        }
+
+        setLivenessStatus({
+          success: false,
+          message: errorMessage,
+          score: result.livenessScore
+        });
+
+        // Increment retry counter
+        retryCountRef.current += 1;
+
+        setStatusMessage(`${errorMessage} (${retryCountRef.current}/3)`);
+
+        // Show alert immediately on failure
+        Alert.alert(
+          errorTitle,
+          `${errorMessage}\n\n📊 विवरण:\n` +
+          `• Score: ${result.livenessScore?.toFixed(4)}\n` +
+          `• Confidence: ${result.livenessConfidence}\n` +
+          `• Camera Quality: ${result.cameraQuality || cameraScore}/100\n` +
+          `• Label: ${result.livenessLabel}\n\n` +
+          `💡 सुझाव:\n${suggestions}\n\n` +
+          `प्रयास: ${retryCountRef.current}/3`,
+          [
+            { 
+              text: retryCountRef.current >= 3 ? "रद्द करें" : "पुनः प्रयास करें", 
+              onPress: () => {
+                if (retryCountRef.current >= 3) {
+                  retryCountRef.current = 0;
+                  onCapture("");
+                } else {
+                  resetCapture();
+                }
+              },
+              style: retryCountRef.current >= 3 ? "cancel" : "default"
+            },
+            ...(retryCountRef.current >= 3 ? [
+              { 
+                text: "फिर से शुरू करें", 
+                onPress: () => {
+                  retryCountRef.current = 0;
+                  resetCapture();
+                }
+              }
+            ] : [])
+          ]
+        );
+
+        // Auto-retry if under 3 attempts
+        if (retryCountRef.current < 3) {
+          setTimeout(() => resetCapture(), 2000);
+        }
+        
+        return;
+      }
+
+      // Success!
+      console.log("✅ LIVENESS CHECK PASSED");
+      retryCountRef.current = 0;
+
+      setLivenessStatus({
+        success: true,
+        message: "सत्यापित ✓",
+        score: result.livenessScore
+      });
+
+      setStatusMessage("सफल! ✓");
+
+      // Save the final image
+      const savePath = RNFS.DocumentDirectoryPath + `/myFace_${Date.now()}.jpg`;
+      await RNFS.copyFile(resized.uri.replace("file://", ""), savePath);
+
+      console.log("✅ Image saved:", savePath);
+      console.log("========================================");
+
+      // Show success alert with details
+      Alert.alert(
+        "✅ लाइवनेस सत्यापन सफल",
+        `आपका चेहरा सफलतापूर्वक सत्यापित हो गया है!\n\n` +
+        `📊 विवरण:\n` +
+        `• Score: ${result.livenessScore?.toFixed(4)}\n` +
+        `• Confidence: ${result.livenessConfidence}\n` +
+        `• Camera Quality: ${result.cameraQuality || cameraScore}/100\n` +
+        `• Processing Time: ${processingTime}s\n` +
+        `• Label: ${result.livenessLabel}\n` +
+        (result.beautyModeDetected ? `• ⚠️ Beauty Mode: Detected\n` : '') +
+        (result.depthVariance ? `• Depth Score: ${result.depthVariance?.toFixed(2)}\n` : ''),
+        [
+          { 
+            text: "जारी रखें", 
+            onPress: () => {
+              // Return the captured data
+              onCapture({
+                uri: "file://" + savePath,
+                livenessData: {
+                  isLive: result.isLive,
+                  score: result.livenessScore,
+                  label: result.livenessLabel,
+                  confidence: result.livenessConfidence,
+                  cameraQuality: result.cameraQuality,
+                  beautyModeDetected: result.beautyModeDetected,
+                  processingTime: processingTime
+                },
+                embedding: result.embedding,
+                faceData: {
+                  width: result.faceWidth,
+                  height: result.faceHeight
+                }
+              });
+            }
+          }
+        ],
+        { cancelable: false }
+      );
+
+    } catch (e) {
+      console.log("========================================");
+      console.log("❌ CAPTURE ERROR:");
+      console.log("   Message:", e.message);
+      console.log("   Stack:", e.stack);
+      console.log("========================================");
+
+      setLivenessStatus({
+        success: false,
+        message: "त्रुटि हुई",
+        score: 0
+      });
+
+      // Show user-friendly error based on error type
+      let errorMsg = "त्रुटि - पुनः प्रयास करें";
+      
+      if (e.message.includes("timeout")) {
+        errorMsg = "प्रोसेसिंग धीमी है - पुनः प्रयास करें";
+      } else if (e.message.includes("too large")) {
+        errorMsg = "इमेज बहुत बड़ी है - पुनः प्रयास करें";
+      } else if (e.message.includes("Camera")) {
+        errorMsg = "कैमरा त्रुटि - पुनः प्रयास करें";
+      }
+
+      setStatusMessage(errorMsg);
+
+      // Auto-retry after error
+      setTimeout(() => resetCapture(), 1500);
+    }
+  }
+
+  /* ---------------- RESET FUNCTION ---------------- */
+  function resetCapture() {
+    capturedRef.current = false;
+    setIsCapturing(false);
+    setLivenessStatus(null);
+    setFaceSize(null);
+    setAlignmentDuration(0);
+    alignmentStartRef.current = null;
+    setStatusMessage("अपना चेहरा फ्रेम में रखें");
+  }
+
+  /* ---------------- UI ---------------- */
+  if (!device || !["granted", "authorized"].includes(permissionStatus)) {
+    return (
+      <View style={styles.fullScreen2}>
+        <ActivityIndicator size="large" color={Theme.colors.primary} />
+        <Text style={{ marginTop: 20, fontSize: 16 }}>कैमरा लोड हो रहा है...</Text>
+      </View>
+    );
+  }
+
+  const ovalWidth = ScreenWidth * 0.70;
+  const ovalHeight = ScreenHeight * 0.45;
+  const ovalX = (ScreenWidth - ovalWidth) / 2;
+  const ovalY = (ScreenHeight - ovalHeight) / 2;
+
+  const progressPercent = Math.min(100, (alignmentDuration / RELAXED_OVAL_CONFIG.STABILITY_DURATION) * 100);
+
+  return (
+    <View style={styles.fullScreen}>
+
+      <TouchableOpacity style={styles.cutButton} onPress={() => onCapture("")}>
+        <XIcon height={30} width={30} color={Theme.colors.white} />
+      </TouchableOpacity>
+
+      {/* Camera Quality Badge */}
+      {cameraScore > 0 && (
+        <View style={styles.qualityBadge}>
+          <Text style={styles.qualityText}>📱 {cameraScore}/100</Text>
+        </View>
+      )}
+
+      <Camera
+        ref={cameraRef}
+        style={{ height: ScreenHeight, width: ScreenWidth }}
+        device={device}
+        isActive
+        photo
+      />
+
+      <Svg height={ScreenHeight} width={ScreenWidth} style={{ position: "absolute" }}>
+        <Defs>
+          <Mask id="mask">
+            <Rect width="100%" height="100%" fill="white" />
+            <Ellipse
+              cx={ScreenWidth / 2}
+              cy={ScreenHeight / 2}
+              rx={ovalWidth / 2}
+              ry={ovalHeight / 2}
+              fill="black"
+            />
+          </Mask>
+        </Defs>
+        <Rect width="100%" height="100%" fill="black" opacity="0.6" mask="url(#mask)" />
+      </Svg>
+
+      {/* Status Message */}
+      <View style={styles.statusContainer}>
+        <Text style={[
+          styles.statusText,
+          {
+            color: livenessStatus 
+              ? (livenessStatus.success ? "#4CAF50" : "#F44336")
+              : isCapturing
+                ? "#FF9800"
+                : faceAligned ? "#4CAF50" : "#FFF",
+          }
+        ]}>
+          {statusMessage}
+        </Text>
+
+        {/* Progress Indicator */}
+        {faceAligned && !isCapturing && !livenessStatus && (
+          <View style={styles.progressBarContainer}>
+            <View style={[styles.progressBar, { width: `${progressPercent}%` }]} />
+          </View>
+        )}
+
+        {/* Processing Indicator */}
+        {isCapturing && (
+          <ActivityIndicator size="small" color="#FFF" style={{ marginTop: 10 }} />
+        )}
+
+        {/* Debug Info (only show on retry) */}
+        {debugInfo && retryCountRef.current > 0 && (
+          <Text style={styles.debugText}>
+            Score: {debugInfo.score?.toFixed(4)} | {debugInfo.label}
+          </Text>
+        )}
+      </View>
+
+      {/* Face Detection Oval Border */}
+      <View style={{
+        position: "absolute",
+        top: ovalY,
+        left: ovalX,
+        width: ovalWidth,
+        height: ovalHeight,
+        borderWidth: 4,
+        borderColor: livenessStatus
+          ? (livenessStatus.success ? "#4CAF50" : "#F44336")
+          : isCapturing
+            ? "#FF9800" 
+            : faceAligned ? "#4CAF50" : "#FFF",
+        borderRadius: ovalWidth / 2,
+        backgroundColor: 'transparent',
+      }} />
+    </View>
+  );
+}
+
+/* ---------------- STYLES ---------------- */
+const styles = StyleSheet.create({
+  fullScreen: {
+    flex: 1,
+    backgroundColor: "black",
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+    zIndex: 999,
+  },
+  fullScreen2: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "white",
+  },
+  cutButton: {
+    position: "absolute",
+    top: 40,
+    left: 20,
+    padding: 10,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 25,
+  },
+  qualityBadge: {
+    position: "absolute",
+    top: 40,
+    right: 20,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+    zIndex: 10,
+  },
+  qualityText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  statusContainer: {
+    position: "absolute",
+    top: 100,
+    width: "100%",
+    alignItems: "center",
+    zIndex: 5,
+  },
+  statusText: {
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "center",
+    paddingHorizontal: 20,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: -1, height: 1 },
+    textShadowRadius: 10,
+  },
+  progressBarContainer: {
+    width: 200,
+    height: 6,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 3,
+    marginTop: 15,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#4CAF50',
+    borderRadius: 3,
+  },
+  debugText: {
+    color: '#FFF',
+    fontSize: 11,
+    marginTop: 8,
+    opacity: 0.8,
+  },
+});

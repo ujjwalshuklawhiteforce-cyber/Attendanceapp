@@ -1,0 +1,829 @@
+package com.attendance.name.facematch
+
+import com.facebook.react.bridge.*
+import org.tensorflow.lite.Interpreter
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.Rect
+import android.util.Base64
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.Face
+import com.google.mlkit.vision.face.FaceDetectorOptions
+import com.google.mlkit.vision.face.FaceDetection
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.math.sqrt
+import kotlin.math.abs
+import kotlin.math.exp
+
+class FaceNetModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+    private var faceNetInterpreter: Interpreter? = null
+    private var antiSpoofInterpreter: Interpreter? = null
+    
+    private val inputSize = 160
+    private val embeddingSize = 512
+    
+    // MiniFASNet input size
+    private val antiSpoofInputSize = 80
+
+    // Optimized detector for real-time performance
+    private val detectorOptions = FaceDetectorOptions.Builder()
+        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+        .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
+        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
+        .setMinFaceSize(0.15f)
+        .enableTracking()
+        .build()
+
+    private val detector = FaceDetection.getClient(detectorOptions)
+
+    // Quality thresholds
+    private val MIN_FACE_SIZE = 80
+    private val MIN_BRIGHTNESS = 40
+    private val MAX_BRIGHTNESS = 220
+    private val MIN_SHARPNESS = 10.0
+    private val MATCH_THRESHOLD = 0.74f
+    private val HIGH_CONFIDENCE_THRESHOLD = 0.53f
+
+    override fun getName(): String = "FaceNetModule"
+
+    init {
+        try {
+            // Load FaceNet model
+            val faceNetFile = reactApplicationContext.assets.open("facenet.tflite")
+            val faceNetBytes = faceNetFile.readBytes()
+            val faceNetBuffer = ByteBuffer.allocateDirect(faceNetBytes.size).apply {
+                order(ByteOrder.nativeOrder())
+                put(faceNetBytes)
+                rewind()
+            }
+            faceNetInterpreter = Interpreter(faceNetBuffer, Interpreter.Options().apply {
+                setNumThreads(4)
+                setUseNNAPI(true)
+            })
+            println("✅ FaceNetModule: FaceNet model loaded successfully")
+
+            // Load MiniFASNet anti-spoofing model
+            val antiSpoofFile = reactApplicationContext.assets.open("2.7_80x80_MiniFASNetV2.tflite")
+            val antiSpoofBytes = antiSpoofFile.readBytes()
+            val antiSpoofBuffer = ByteBuffer.allocateDirect(antiSpoofBytes.size).apply {
+                order(ByteOrder.nativeOrder())
+                put(antiSpoofBytes)
+                rewind()
+            }
+            antiSpoofInterpreter = Interpreter(antiSpoofBuffer, Interpreter.Options().apply {
+                setNumThreads(4)
+                setUseNNAPI(false)  // Disable NNAPI for consistency
+            })
+            println("✅ FaceNetModule: MiniFASNet anti-spoofing model loaded successfully")
+
+        } catch (e: Exception) {
+            println("❌ FaceNetModule ERROR loading models => ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    private fun decodeBase64ToBitmap(base64Str: String): Bitmap? {
+        return try {
+            val cleanBase64 = base64Str.replace("data:image/[^;]+;base64,".toRegex(), "")
+            val decodedBytes = Base64.decode(cleanBase64, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+        } catch (e: Exception) {
+            println("❌ FaceNetModule decode ERROR => ${e.message}")
+            null
+        }
+    }
+
+    // 🔥 LIVENESS RESULT DATA CLASS
+    data class LivenessResult(
+        val isLive: Boolean,
+        val score: Float,
+        val label: String,
+        val confidence: String,
+        val debugInfo: String = "",
+        val allScores: Map<String, Float> = emptyMap()
+    )
+
+    private fun detectAndCropFace(bitmap: Bitmap, callback: (Bitmap?, Face?, String?, LivenessResult?) -> Unit) {
+        val image = InputImage.fromBitmap(bitmap, 0)
+        
+        detector.process(image)
+            .addOnSuccessListener { faces ->
+                if (faces.isEmpty()) {
+                    callback(null, null, "No face detected", null)
+                    return@addOnSuccessListener
+                }
+
+                val face = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }!!
+                
+                val qualityIssue = checkFaceQuality(face, bitmap)
+                if (qualityIssue != null) {
+                    callback(null, face, qualityIssue, null)
+                    return@addOnSuccessListener
+                }
+
+                // 🔥 PERFORM LIVENESS DETECTION
+                val livenessResult = performLivenessDetection(bitmap, face)
+                
+                if (!livenessResult.isLive) {
+                    val reason = "Liveness check failed: ${livenessResult.label} (score: ${String.format("%.4f", livenessResult.score)})"
+                    callback(null, face, reason, livenessResult)
+                    return@addOnSuccessListener
+                }
+
+                val bbox = expandBoundingBox(face.boundingBox, bitmap, 0.2f)
+                
+                val croppedFace = Bitmap.createBitmap(
+                    bitmap,
+                    bbox.left,
+                    bbox.top,
+                    bbox.width(),
+                    bbox.height()
+                )
+
+                callback(croppedFace, face, null, livenessResult)
+            }
+            .addOnFailureListener { e ->
+                callback(null, null, "Face detection failed: ${e.message}", null)
+            }
+    }
+
+    // 🔥 AUTO-CALIBRATING LIVENESS DETECTION WITH MULTIPLE METHODS
+    private fun performLivenessDetection(bitmap: Bitmap, face: Face): LivenessResult {
+        if (antiSpoofInterpreter == null) {
+            println("⚠️  Anti-spoofing model not loaded")
+            return LivenessResult(
+                isLive = false,
+                score = 0.0f,
+                label = "Model not loaded",
+                confidence = "low"
+            )
+        }
+
+        try {
+            val bbox = face.boundingBox
+            
+            println("========================================")
+            println("🔍 LIVENESS DETECTION - AUTO CALIBRATION")
+            println("========================================")
+            println("🔍 Face bbox: left=${bbox.left}, top=${bbox.top}, width=${bbox.width()}, height=${bbox.height()}")
+            
+            // Test all 3 preprocessing methods
+            val allScores = mutableMapOf<String, Float>()
+            
+            val methods = listOf(
+                "method1_0to1" to ::preprocessMethod1,
+                "method2_neg1to1" to ::preprocessMethod2,
+                "method3_imagenet" to ::preprocessMethod3
+            )
+            
+            for ((methodName, preprocessFunc) in methods) {
+                try {
+                    val padding = (bbox.width() * 0.1f).toInt()
+                    val left = (bbox.left - padding).coerceAtLeast(0)
+                    val top = (bbox.top - padding).coerceAtLeast(0)
+                    val right = (bbox.right + padding).coerceAtMost(bitmap.width)
+                    val bottom = (bbox.bottom + padding).coerceAtMost(bitmap.height)
+                    
+                    val faceCrop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+                    
+                    val input = preprocessFunc(faceCrop)
+                    
+                    val outputShape = antiSpoofInterpreter!!.getOutputTensor(0).shape()
+                    val outputSize = if (outputShape.size > 1) outputShape[1] else 1
+                    val output = Array(1) { FloatArray(outputSize) }
+                    
+                    antiSpoofInterpreter!!.run(input, output)
+                    
+                    val score = parseModelOutput(output[0], outputSize, methodName)
+                    allScores[methodName] = score
+                    
+                    println("📊 $methodName => score=${"%.4f".format(score)}, raw=${output[0].contentToString()}")
+                    
+                } catch (e: Exception) {
+                    println("⚠️  $methodName failed: ${e.message}")
+                }
+            }
+            
+            if (allScores.isEmpty()) {
+                throw Exception("All preprocessing methods failed")
+            }
+            
+            // 🎯 SELECT BEST METHOD (furthest from 0.5 = most confident)
+            val bestMethod = allScores.maxByOrNull { abs(it.value - 0.5f) }!!
+            val finalScore = bestMethod.value
+            val methodUsed = bestMethod.key
+            
+            println("========================================")
+            println("🎯 BEST METHOD: $methodUsed")
+            println("🎯 FINAL SCORE: ${"%.4f".format(finalScore)}")
+            println("🎯 ALL SCORES: ${allScores.map { "${it.key}=${"%.4f".format(it.value)}" }.joinToString(", ")}")
+            
+            // 🔥 ENHANCED DECISION LOGIC WITH QUALITY FALLBACK
+            val isLive: Boolean
+            val label: String
+            val confidence: String
+            
+            when {
+                finalScore > 0.65f -> {
+                    isLive = true
+                    label = "Real Face - High Confidence"
+                    confidence = "high"
+                    println("✅ RESULT: Real Face (High Confidence)")
+                }
+                finalScore > 0.55f -> {
+                    isLive = true
+                    label = "Real Face - Medium Confidence"
+                    confidence = "medium"
+                    println("✅ RESULT: Real Face (Medium Confidence)")
+                }
+                finalScore > 0.45f -> {
+                    // ⚠️ UNCERTAIN - Use quality checks
+                    println("⚠️  UNCERTAIN ZONE - Running quality checks...")
+                    val qualityResult = performQualityChecks(bitmap, face)
+                    isLive = qualityResult.score > 0.6f
+                    label = if (isLive) "Real Face - Quality Verified" else "Suspicious - Failed Quality"
+                    confidence = "low"
+                    println("🔍 Quality Score: ${"%.4f".format(qualityResult.score)} => ${if (isLive) "PASS" else "FAIL"}")
+                }
+                finalScore > 0.35f -> {
+                    isLive = false
+                    label = "Fake/Spoof - Medium Confidence"
+                    confidence = "medium"
+                    println("❌ RESULT: Fake/Spoof (Medium Confidence)")
+                }
+                else -> {
+                    isLive = false
+                    label = "Fake/Spoof - High Confidence"
+                    confidence = "high"
+                    println("❌ RESULT: Fake/Spoof (High Confidence)")
+                }
+            }
+            
+            val debugInfo = "method=$methodUsed, scores=${allScores.map { "${it.key}=${"%.4f".format(it.value)}" }.joinToString(",")}"
+            
+            println("========================================")
+            println("🎯 FINAL LIVENESS RESULT:")
+            println("   IsLive: $isLive")
+            println("   Score: ${"%.4f".format(finalScore)}")
+            println("   Label: $label")
+            println("   Confidence: $confidence")
+            println("   Method Used: $methodUsed")
+            println("========================================")
+            
+            return LivenessResult(
+                isLive = isLive,
+                score = finalScore,
+                label = label,
+                confidence = confidence,
+                debugInfo = debugInfo,
+                allScores = allScores
+            )
+            
+        } catch (e: Exception) {
+            println("❌ Liveness error: ${e.message}")
+            e.printStackTrace()
+            return LivenessResult(
+                isLive = false,
+                score = 0.0f,
+                label = "Error: ${e.message}",
+                confidence = "low"
+            )
+        }
+    }
+
+    // Parse model output intelligently
+    private fun parseModelOutput(output: FloatArray, size: Int, methodName: String): Float {
+        println("   🔬 $methodName parsing: size=$size, raw=${output.contentToString()}")
+        
+        return when (size) {
+            1 -> {
+                val rawScore = output[0]
+                println("   📊 Binary output: ${"%.4f".format(rawScore)}")
+                rawScore
+            }
+            2 -> {
+                val score0 = output[0]
+                val score1 = output[1]
+                
+                // Apply softmax
+                val maxVal = maxOf(score0, score1)
+                val exp0 = exp(score0 - maxVal)
+                val exp1 = exp(score1 - maxVal)
+                val sum = exp0 + exp1
+                
+                val prob0 = exp0 / sum
+                val prob1 = exp1 / sum
+                
+                println("   📊 2-class softmax: [${"%.4f".format(prob0)}, ${"%.4f".format(prob1)}]")
+                
+                // Return the one furthest from 0.5
+                if (abs(prob1 - 0.5f) > abs(prob0 - 0.5f)) {
+                    println("   📊 Using index[1] (real): ${"%.4f".format(prob1)}")
+                    prob1
+                } else {
+                    println("   📊 Using index[0] (real): ${"%.4f".format(prob0)}")
+                    prob0
+                }
+            }
+            3 -> {
+                val score0 = output[0]
+                val score1 = output[1]
+                val score2 = output[2]
+                
+                // Apply softmax
+                val maxVal = maxOf(score0, score1, score2)
+                val exp0 = exp(score0 - maxVal)
+                val exp1 = exp(score1 - maxVal)
+                val exp2 = exp(score2 - maxVal)
+                val sum = exp0 + exp1 + exp2
+                
+                val prob0 = exp0 / sum
+                val prob1 = exp1 / sum
+                val prob2 = exp2 / sum
+                
+                println("   📊 3-class softmax: [${"%.4f".format(prob0)}, ${"%.4f".format(prob1)}, ${"%.4f".format(prob2)}]")
+                println("   📊 Using index[1] (real): ${"%.4f".format(prob1)}")
+                
+                prob1
+            }
+            else -> {
+                println("   ⚠️  Unknown output size: $size")
+                output[0]
+            }
+        }
+    }
+
+    // METHOD 1: [0, 1] normalization
+    private fun preprocessMethod1(bitmap: Bitmap): Array<Array<Array<FloatArray>>> {
+        val resized = Bitmap.createScaledBitmap(bitmap, antiSpoofInputSize, antiSpoofInputSize, true)
+        val input = Array(1) { Array(antiSpoofInputSize) { Array(antiSpoofInputSize) { FloatArray(3) } } }
+
+        for (y in 0 until antiSpoofInputSize) {
+            for (x in 0 until antiSpoofInputSize) {
+                val pixel = resized.getPixel(x, y)
+                input[0][y][x][0] = Color.red(pixel) / 255f
+                input[0][y][x][1] = Color.green(pixel) / 255f
+                input[0][y][x][2] = Color.blue(pixel) / 255f
+            }
+        }
+        return input
+    }
+
+    // METHOD 2: [-1, 1] normalization
+    private fun preprocessMethod2(bitmap: Bitmap): Array<Array<Array<FloatArray>>> {
+        val resized = Bitmap.createScaledBitmap(bitmap, antiSpoofInputSize, antiSpoofInputSize, true)
+        val input = Array(1) { Array(antiSpoofInputSize) { Array(antiSpoofInputSize) { FloatArray(3) } } }
+
+        for (y in 0 until antiSpoofInputSize) {
+            for (x in 0 until antiSpoofInputSize) {
+                val pixel = resized.getPixel(x, y)
+                input[0][y][x][0] = (Color.red(pixel) - 127.5f) / 127.5f
+                input[0][y][x][1] = (Color.green(pixel) - 127.5f) / 127.5f
+                input[0][y][x][2] = (Color.blue(pixel) - 127.5f) / 127.5f
+            }
+        }
+        return input
+    }
+
+    // METHOD 3: ImageNet normalization
+    private fun preprocessMethod3(bitmap: Bitmap): Array<Array<Array<FloatArray>>> {
+        val resized = Bitmap.createScaledBitmap(bitmap, antiSpoofInputSize, antiSpoofInputSize, true)
+        val input = Array(1) { Array(antiSpoofInputSize) { Array(antiSpoofInputSize) { FloatArray(3) } } }
+
+        for (y in 0 until antiSpoofInputSize) {
+            for (x in 0 until antiSpoofInputSize) {
+                val pixel = resized.getPixel(x, y)
+                input[0][y][x][0] = (Color.red(pixel) / 255f - 0.485f) / 0.229f
+                input[0][y][x][1] = (Color.green(pixel) / 255f - 0.456f) / 0.224f
+                input[0][y][x][2] = (Color.blue(pixel) / 255f - 0.406f) / 0.225f
+            }
+        }
+        return input
+    }
+
+    // 🎯 QUALITY CHECKS FOR UNCERTAIN CASES
+    private fun performQualityChecks(bitmap: Bitmap, face: Face): LivenessResult {
+        val bbox = face.boundingBox
+        var qualityScore = 0f
+        
+        println("   🔍 Quality Check: Texture variance...")
+        val textureScore = calculateTextureVariance(bitmap, bbox)
+        println("      Texture: ${"%.2f".format(textureScore)}")
+        if (textureScore > 12.0) {
+            qualityScore += 0.3f
+        }
+        
+        println("   🔍 Quality Check: Color naturalness...")
+        val colorScore = calculateColorNaturalness(bitmap, bbox)
+        println("      Color: ${"%.4f".format(colorScore)}")
+        if (colorScore > 0.15) {
+            qualityScore += 0.25f
+        }
+        
+        println("   🔍 Quality Check: Sharpness...")
+        val sharpness = calculateSharpness(bitmap, bbox)
+        println("      Sharpness: ${"%.2f".format(sharpness)}")
+        if (sharpness in 15.0..60.0) {
+            qualityScore += 0.25f
+        }
+        
+        if (face.trackingId != null) {
+            qualityScore += 0.2f
+            println("      Tracking: ✓")
+        }
+        
+        println("   🔍 Quality Total: ${"%.4f".format(qualityScore)}")
+        
+        return LivenessResult(
+            isLive = qualityScore > 0.6f,
+            score = qualityScore,
+            label = "Quality Check",
+            confidence = if (qualityScore > 0.7f || qualityScore < 0.4f) "high" else "medium"
+        )
+    }
+
+    private fun calculateTextureVariance(bitmap: Bitmap, bbox: Rect): Double {
+        val pixels = mutableListOf<Int>()
+        for (y in bbox.top until bbox.bottom step 3) {
+            for (x in bbox.left until bbox.right step 3) {
+                if (x < bitmap.width && y < bitmap.height) {
+                    val pixel = bitmap.getPixel(x, y)
+                    val gray = (Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)) / 3
+                    pixels.add(gray)
+                }
+            }
+        }
+        if (pixels.size < 2) return 0.0
+        val mean = pixels.average()
+        val variance = pixels.map { (it - mean) * (it - mean) }.average()
+        return sqrt(variance)
+    }
+
+    private fun calculateColorNaturalness(bitmap: Bitmap, bbox: Rect): Double {
+        var rSum = 0.0
+        var gSum = 0.0
+        var bSum = 0.0
+        var count = 0
+        
+        for (y in bbox.top until bbox.bottom step 4) {
+            for (x in bbox.left until bbox.right step 4) {
+                if (x < bitmap.width && y < bitmap.height) {
+                    val pixel = bitmap.getPixel(x, y)
+                    rSum += Color.red(pixel)
+                    gSum += Color.green(pixel)
+                    bSum += Color.blue(pixel)
+                    count++
+                }
+            }
+        }
+        
+        if (count == 0) return 0.0
+        val rAvg = rSum / count / 255.0
+        val gAvg = gSum / count / 255.0
+        val bAvg = bSum / count / 255.0
+        
+        return sqrt((rAvg - gAvg) * (rAvg - gAvg) + (gAvg - bAvg) * (gAvg - bAvg) + (bAvg - rAvg) * (bAvg - rAvg)) / 3.0
+    }
+
+    private fun checkFaceQuality(face: Face, bitmap: Bitmap): String? {
+        val bbox = face.boundingBox
+
+        if (bbox.width() < MIN_FACE_SIZE || bbox.height() < MIN_FACE_SIZE) {
+            return "Face too small (move closer)"
+        }
+
+        val margin = 20
+        if (bbox.left < margin || bbox.top < margin || 
+            bbox.right > bitmap.width - margin || 
+            bbox.bottom > bitmap.height - margin) {
+            return "Face too close to edge"
+        }
+
+        val headEulerAngleY = face.headEulerAngleY
+        val headEulerAngleZ = face.headEulerAngleZ
+
+        if (abs(headEulerAngleY) > 20) {
+            return "Face not frontal (turn face towards camera)"
+        }
+
+        if (abs(headEulerAngleZ) > 15) {
+            return "Head tilted too much"
+        }
+
+        val avgBrightness = calculateAverageBrightness(bitmap, bbox)
+        if (avgBrightness < MIN_BRIGHTNESS) {
+            return "Too dark (need better lighting)"
+        }
+        if (avgBrightness > MAX_BRIGHTNESS) {
+            return "Too bright (reduce lighting)"
+        }
+
+        if (face.leftEyeOpenProbability != null && face.rightEyeOpenProbability != null) {
+            val leftEyeOpen = face.leftEyeOpenProbability!! > 0.5
+            val rightEyeOpen = face.rightEyeOpenProbability!! > 0.5
+            
+            if (!leftEyeOpen || !rightEyeOpen) {
+                return "Please open your eyes"
+            }
+        }
+
+        val sharpness = calculateSharpness(bitmap, bbox)
+        if (sharpness < MIN_SHARPNESS) {
+            return "Image too blurry (hold steady)"
+        }
+
+        return null
+    }
+
+    private fun expandBoundingBox(bbox: Rect, bitmap: Bitmap, margin: Float): Rect {
+        val expandX = (bbox.width() * margin).toInt()
+        val expandY = (bbox.height() * margin).toInt()
+
+        return Rect(
+            (bbox.left - expandX).coerceAtLeast(0),
+            (bbox.top - expandY).coerceAtLeast(0),
+            (bbox.right + expandX).coerceAtMost(bitmap.width),
+            (bbox.bottom + expandY).coerceAtMost(bitmap.height)
+        )
+    }
+
+    private fun calculateAverageBrightness(bitmap: Bitmap, bbox: Rect): Int {
+        var totalBrightness = 0
+        var pixelCount = 0
+
+        for (y in bbox.top until bbox.bottom step 5) {
+            for (x in bbox.left until bbox.right step 5) {
+                val pixel = bitmap.getPixel(x, y)
+                val brightness = (Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)) / 3
+                totalBrightness += brightness
+                pixelCount++
+            }
+        }
+
+        return if (pixelCount > 0) totalBrightness / pixelCount else 0
+    }
+
+    private fun calculateSharpness(bitmap: Bitmap, bbox: Rect): Double {
+        var variance = 0.0
+        val pixels = mutableListOf<Int>()
+
+        for (y in bbox.top until bbox.bottom.coerceAtMost(bitmap.height)) {
+            for (x in bbox.left until bbox.right.coerceAtMost(bitmap.width)) {
+                val pixel = bitmap.getPixel(x, y)
+                val gray = (Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)) / 3
+                pixels.add(gray)
+            }
+        }
+
+        if (pixels.size < 2) return 0.0
+
+        val mean = pixels.average()
+        variance = pixels.map { (it - mean) * (it - mean) }.average()
+
+        return variance
+    }
+
+    private fun preprocessImage(bitmap: Bitmap): Array<Array<Array<FloatArray>>> {
+        val resized = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
+        val input = Array(1) { Array(inputSize) { Array(inputSize) { FloatArray(3) } } }
+
+        for (y in 0 until inputSize) {
+            for (x in 0 until inputSize) {
+                val pixel = resized.getPixel(x, y)
+                input[0][y][x][0] = (Color.red(pixel) - 127.5f) / 128f
+                input[0][y][x][1] = (Color.green(pixel) - 127.5f) / 128f
+                input[0][y][x][2] = (Color.blue(pixel) - 127.5f) / 128f
+            }
+        }
+
+        return input
+    }
+
+    private fun getEmbedding(bitmap: Bitmap): FloatArray? {
+        val input = preprocessImage(bitmap)
+        val output = Array(1) { FloatArray(embeddingSize) }
+
+        faceNetInterpreter?.run(input, output)
+        val normalized = normalizeEmbedding(output[0])
+
+        return normalized
+    }
+
+    private fun normalizeEmbedding(embedding: FloatArray): FloatArray {
+        var norm = 0f
+        embedding.forEach { norm += it * it }
+        norm = sqrt(norm)
+
+        if (norm == 0f) return embedding
+
+        val result = FloatArray(embedding.size)
+        for (i in embedding.indices) result[i] = embedding[i] / norm
+        return result
+    }
+
+    private fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
+        var dot = 0f
+        for (i in a.indices) {
+            dot += a[i] * b[i]
+        }
+        return dot.coerceIn(-1f, 1f)
+    }
+
+    // =====================================================================
+    // CAPTURE & RETURN EMBEDDING - For enrollment WITH LIVENESS
+    // =====================================================================
+    @ReactMethod
+    fun captureAndGetEmbedding(imageBase64: String, promise: Promise) {
+        Thread {
+            try {
+                val bitmap = decodeBase64ToBitmap(imageBase64)
+                    ?: throw Exception("Failed to decode image")
+
+                detectAndCropFace(bitmap) { croppedFace, face, error, livenessResult ->
+                    if (error != null) {
+                        reactApplicationContext.runOnUiQueueThread {
+                            promise.reject("QUALITY_ERROR", error)
+                        }
+                        return@detectAndCropFace
+                    }
+
+                    if (croppedFace == null) {
+                        reactApplicationContext.runOnUiQueueThread {
+                            promise.reject("NO_FACE", "No face detected")
+                        }
+                        return@detectAndCropFace
+                    }
+
+                    val embedding = getEmbedding(croppedFace)
+                        ?: throw Exception("Failed to extract embedding")
+
+                    // Convert embedding to array
+                    val embeddingArray = Arguments.createArray()
+                    embedding.forEach { embeddingArray.pushDouble(it.toDouble()) }
+
+                    val result = Arguments.createMap().apply {
+                        putArray("embedding", embeddingArray)
+                        putString("status", "success")
+                        putDouble("faceWidth", face?.boundingBox?.width()?.toDouble() ?: 0.0)
+                        putDouble("faceHeight", face?.boundingBox?.height()?.toDouble() ?: 0.0)
+                        
+                        // 🔥 Add liveness data
+                        if (livenessResult != null) {
+                            putBoolean("isLive", livenessResult.isLive)
+                            putDouble("livenessScore", livenessResult.score.toDouble())
+                            putString("livenessLabel", livenessResult.label)
+                            putString("livenessConfidence", livenessResult.confidence)
+                            putString("livenessDebug", livenessResult.debugInfo)
+                            
+                            // Add all method scores
+                            val scoresMap = Arguments.createMap()
+                            livenessResult.allScores.forEach { (method, score) ->
+                                scoresMap.putDouble(method, score.toDouble())
+                            }
+                            putMap("allMethodScores", scoresMap)
+                        }
+                    }
+
+                    println("✅ Embedding extracted (${embedding.size} dims)")
+
+                    reactApplicationContext.runOnUiQueueThread {
+                        promise.resolve(result)
+                    }
+                }
+
+            } catch (e: Exception) {
+                println("❌ FaceNetModule ERROR => ${e.message}")
+                reactApplicationContext.runOnUiQueueThread {
+                    promise.reject("CAPTURE_ERROR", e.message)
+                }
+            }
+        }.start()
+    }
+
+    // =====================================================================
+    // MATCH WITH EMBEDDINGS - WITH LIVENESS
+    // =====================================================================
+    @ReactMethod
+    fun matchWithEmbeddings(testImageBase64: String, referenceEmbeddings: ReadableArray, promise: Promise) {
+        Thread {
+            try {
+                val testBitmap = decodeBase64ToBitmap(testImageBase64)
+                    ?: throw Exception("Failed to decode test image")
+
+                detectAndCropFace(testBitmap) { testFace, face, error, livenessResult ->
+                    if (error != null) {
+                        reactApplicationContext.runOnUiQueueThread {
+                            promise.reject("QUALITY_ERROR", error)
+                        }
+                        return@detectAndCropFace
+                    }
+
+                    if (testFace == null) {
+                        reactApplicationContext.runOnUiQueueThread {
+                            promise.reject("NO_FACE", "No face detected in test image")
+                        }
+                        return@detectAndCropFace
+                    }
+
+                    val testEmbedding = getEmbedding(testFace)
+                        ?: throw Exception("Failed to extract test embedding")
+
+                    val refEmbeddings = mutableListOf<FloatArray>()
+                    
+                    for (i in 0 until referenceEmbeddings.size()) {
+                        val embArray = referenceEmbeddings.getArray(i)
+                        if (embArray != null && embArray.size() == embeddingSize) {
+                            val embedding = FloatArray(embeddingSize)
+                            for (j in 0 until embeddingSize) {
+                                embedding[j] = embArray.getDouble(j).toFloat()
+                            }
+                            refEmbeddings.add(embedding)
+                        }
+                    }
+
+                    if (refEmbeddings.isEmpty()) {
+                        reactApplicationContext.runOnUiQueueThread {
+                            promise.reject("NO_EMBEDDINGS", "No valid reference embeddings provided")
+                        }
+                        return@detectAndCropFace
+                    }
+
+                    val similarities = refEmbeddings.map { refEmb ->
+                        cosineSimilarity(testEmbedding, refEmb)
+                    }
+
+                    val maxSimilarity = similarities.maxOrNull() ?: 0f
+                    val avgSimilarity = similarities.average().toFloat()
+
+                    val isMatch = maxSimilarity >= MATCH_THRESHOLD
+                    val matchStatus = if (isMatch) "MATCH_FOUND" else "MATCH_NOT_FOUND"
+                    
+                    val confidence = when {
+                        maxSimilarity >= HIGH_CONFIDENCE_THRESHOLD -> "high"
+                        maxSimilarity >= MATCH_THRESHOLD -> "medium"
+                        else -> "low"
+                    }
+
+                    println("========================================")
+                    println("🎯 MATCH RESULTS:")
+                    println("Status: $matchStatus")
+                    println("Max Similarity: $maxSimilarity")
+                    println("Avg Similarity: $avgSimilarity")
+                    println("Confidence: $confidence")
+                    println("Liveness: ${livenessResult?.isLive} (${livenessResult?.score})")
+                    println("========================================")
+
+                    val result = Arguments.createMap().apply {
+                        putBoolean("isMatch", isMatch)
+                        putString("matchStatus", matchStatus)
+                        putDouble("similarity", maxSimilarity.toDouble())
+                        putDouble("avgSimilarity", avgSimilarity.toDouble())
+                        putString("confidence", confidence)
+                        putDouble("threshold", MATCH_THRESHOLD.toDouble())
+                        putInt("referencesCompared", refEmbeddings.size)
+                        
+                        // 🔥 Add liveness data
+                        if (livenessResult != null) {
+                            putBoolean("isLive", livenessResult.isLive)
+                            putDouble("livenessScore", livenessResult.score.toDouble())
+                            putString("livenessLabel", livenessResult.label)
+                            putString("livenessConfidence", livenessResult.confidence)
+                            putString("livenessDebug", livenessResult.debugInfo)
+                            
+                            val scoresMap = Arguments.createMap()
+                            livenessResult.allScores.forEach { (method, score) ->
+                                scoresMap.putDouble(method, score.toDouble())
+                            }
+                            putMap("allMethodScores", scoresMap)
+                        }
+                    }
+
+                    reactApplicationContext.runOnUiQueueThread {
+                        promise.resolve(result)
+                    }
+                }
+
+            } catch (e: Exception) {
+                println("❌ FaceNetModule ERROR => ${e.message}")
+                reactApplicationContext.runOnUiQueueThread {
+                    promise.reject("MATCH_ERROR", e.message)
+                }
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun enrollFace(imageBase64: String, promise: Promise) {
+        captureAndGetEmbedding(imageBase64, promise)
+    }
+
+    override fun onCatalystInstanceDestroy() {
+        faceNetInterpreter?.close()
+        antiSpoofInterpreter?.close()
+        detector.close()
+        println("FaceNetModule destroyed")
+        super.onCatalystInstanceDestroy()
+    }
+}

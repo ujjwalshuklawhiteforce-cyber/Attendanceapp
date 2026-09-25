@@ -1,0 +1,110 @@
+# ===================================
+# React Native - .gitignore
+# System transfer ke liye optimized
+# ===================================
+
+# -----------------------------------------------
+# NODE
+# -----------------------------------------------
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn-debug.log
+
+# -----------------------------------------------
+# REACT NATIVE / METRO
+# -----------------------------------------------
+.metro-health-check*
+.react-native-cache/
+
+# -----------------------------------------------
+# ANDROID BUILD & GENERATED FILES
+# -----------------------------------------------
+android/build/
+android/app/build/
+android/.gradle/
+android/.idea/
+android/local.properties
+android/app/release/
+android/app/debug/
+android/captures/
+
+# JVM Crash Logs (Gradle/Java se generate hote hain - zaruri nahi)
+hs_err_pid*.log
+replay_pid*.log
+android/hs_err_pid*.log
+android/replay_pid*.log
+
+# Android generated dependency file
+android/full-deps.txt
+
+# -----------------------------------------------
+# IOS BUILD & GENERATED FILES
+# -----------------------------------------------
+ios/build/
+ios/Pods/
+ios/*.xcworkspace/xcuserdata/
+ios/*.xcodeproj/xcuserdata/
+ios/*.xcodeproj/project.xcworkspace/xcuserdata/
+ios/DerivedData/
+ios/Podfile.lock
+
+# -----------------------------------------------
+# ENVIRONMENT & SECRETS (Kabhi commit mat karo!)
+# -----------------------------------------------
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+*.keystore
+*.jks
+android/app/google-services.json
+ios/GoogleService-Info.plist
+
+# -----------------------------------------------
+# EDITOR / IDE FILES
+# -----------------------------------------------
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# -----------------------------------------------
+# OS GENERATED
+# -----------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# -----------------------------------------------
+# LOGS & TEMP FILES
+# -----------------------------------------------
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# -----------------------------------------------
+# TEST COVERAGE
+# -----------------------------------------------
+coverage/
+.nyc_output/
+
+# -----------------------------------------------
+# VENDOR (Ruby gems - iOS ke liye)
+# -----------------------------------------------
+vendor/bundle/
+
+# -----------------------------------------------
+# MACOS ARTIFACTS
+# -----------------------------------------------
+__MACOSX/

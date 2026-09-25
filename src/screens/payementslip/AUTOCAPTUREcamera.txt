@@ -1,0 +1,1748 @@
+// import React, { useState, useEffect, useRef } from 'react';
+// import { View, StyleSheet, Dimensions, Text, TouchableOpacity, Platform, Alert } from 'react-native';
+// import { Camera, useCameraDevices } from 'react-native-vision-camera';
+// import RNFS from 'react-native-fs';
+// import FaceDetection from '@react-native-ml-kit/face-detection';
+// import Theme from 'FaceEmbading/Theme';
+
+// import ImageResizer from 'react-native-image-resizer';
+// import { request, openSettings as RNPOpenSettings, PERMISSIONS, RESULTS } from "react-native-permissions";
+// import { XIcon } from 'assets/Svg/svg';
+// import { ScreenHeight, ScreenWidth } from '@freakycoder/react-native-helpers';
+// import Svg, { Rect, Defs, Mask, Ellipse } from "react-native-svg";
+// export default function FaceCaptureModalforfacnet({ onCapture }) {
+
+//   const [faceAligned, setFaceAligned] = useState(false);
+//   const [permissionStatus, setPermissionStatus] = useState('loading');
+//   const [device, setDevice] = useState(null);
+//   const cameraRef = useRef(null);
+
+//   const devices = useCameraDevices();
+
+//   // ------------------ PERMISSION HANDLING -------------------
+//   useEffect(() => {
+//     async function getPermission() {
+//       try {
+//         const status = await Camera.getCameraPermissionStatus();
+
+//         if (status === 'not-determined') {
+//           const req = await Camera.requestCameraPermission();
+//           setPermissionStatus(req);
+//         } else {
+//           setPermissionStatus(status);
+//         }
+//       } catch (err) {
+//         setPermissionStatus("denied");
+//       }
+//     }
+
+//     getPermission();
+//   }, []);
+
+//   async function askCameraPermission() {
+//     try {
+//       const permission = Platform.OS === "ios" ? PERMISSIONS.IOS.CAMERA : PERMISSIONS.ANDROID.CAMERA;
+//       const result = await request(permission);
+
+//       if (result === RESULTS.GRANTED) {
+//         setPermissionStatus("granted");
+//       } else {
+//         RNPOpenSettings();
+//         onCapture("");
+//       }
+//     } catch (e) {
+//       console.log("Permission Error:", e);
+//     }
+//   }
+
+//   useEffect(() => {
+//     if (!devices) return;
+
+//     if (permissionStatus === "granted" || permissionStatus === "authorized") {
+//       const frontCam =
+//         Array.isArray(devices) && devices.length > 0
+//           ? devices.find(d => d.position === "front") || devices[0]
+//           : devices.front;
+
+//       if (frontCam) setDevice(frontCam);
+//     }
+
+//     if (permissionStatus === "denied") {
+//       askCameraPermission();
+//     }
+
+//     if (permissionStatus === "blocked") {
+//       RNPOpenSettings();
+//     }
+//   }, [permissionStatus, devices]);
+
+//   // ------------------ FACE DETECTION LOOP -------------------
+//   useEffect(() => {
+//     let interval;
+//     let captured = false;
+//     let processing = false;
+
+//     if (!device || !cameraRef.current) return;
+
+//     interval = setInterval(async () => {
+//       if (captured || processing) return;
+//       processing = true;
+
+//       let snapshotPath = null;
+
+//       try {
+//         const snapshot = await cameraRef.current.takeSnapshot({
+//           quality: 0.5,
+//           skipMetadata: true,
+//         });
+
+//         snapshotPath = snapshot.path;
+//         const snapUri = "file://" + snapshot.path;
+
+//         const faces = await FaceDetection.detect(snapUri);
+
+//         if (faces.length > 0) {
+//           const isAligned = isFaceInsideOval(faces[0], snapshot.width, snapshot.height);
+
+//           if (isAligned) {
+//             captured = true;
+//             clearInterval(interval);
+//             setFaceAligned(true);
+
+//             const photo = await cameraRef.current.takePhoto({
+//               qualityPrioritization: "quality",
+//               skipMetadata: false,
+//             });
+
+//             const fileUri = "file://" + photo.path;
+
+//             const resized = await ImageResizer.createResizedImage(
+//               fileUri,
+//               photo.width,
+//               photo.height,
+//               "JPEG",
+//               100,
+//               270
+//             );
+
+//             const croppedUri = resized.uri; // STRING, not object
+
+//             const uniquePath = RNFS.DocumentDirectoryPath + `/myFace_${Date.now()}.jpg`;
+
+//             // ------------------ FIXED LINE ------------------
+//             const srcPath = croppedUri.replace("file://", "");
+
+//             await RNFS.copyFile(srcPath, uniquePath);
+
+//             onCapture({ uri: "file://" + uniquePath });
+//           } else {
+//             setFaceAligned(false);
+//           }
+//         }
+//       } catch (e) {
+//         console.log("Face detection error:", e);
+//       } finally {
+//         if (snapshotPath) {
+//           RNFS.unlink(snapshotPath).catch(() => {});
+//         }
+//         processing = false;
+//       }
+//     }, 300);
+
+//     return () => clearInterval(interval);
+//   }, [device]);
+
+//   // ------------------ NO PERMISSION SCREEN -------------------
+//   if (
+//     permissionStatus !== "authorized" &&
+//     permissionStatus !== "granted" ||
+//     !device
+//   ) {
+//     return (
+//       <View style={styles.fullScreen2}>
+//         <TouchableOpacity style={styles.cutButton} onPress={() => onCapture("")}>
+//           <XIcon height={30} width={30} color={Theme.colors.white} />
+//         </TouchableOpacity>
+
+//         <Text style={styles.text}>
+//           Camera permission required. Please enable it from settings.
+//         </Text>
+//       </View>
+//     );
+//   }
+
+//   // ------------------ MAIN CAMERA UI -------------------
+//   const ovalWidth = ScreenWidth * 0.7;
+//   const ovalHeight = ScreenHeight * 0.45;
+//   const ovalX = (ScreenWidth - ovalWidth) / 2;
+//   const ovalY = (ScreenHeight - ovalHeight) / 2;
+
+//   return (
+//     <View style={styles.fullScreen}>
+
+//       <TouchableOpacity style={styles.cutButton} onPress={() => onCapture("")}>
+//         <XIcon height={30} width={30} color={Theme.colors.black0} />
+//       </TouchableOpacity>
+
+//       <Camera
+//         ref={cameraRef}
+//         style={{ height: ScreenHeight, width: ScreenWidth }}
+//         device={device}
+//         isActive={true}
+//         photo={true}
+//       />
+
+//       {/* Mask */}
+//       <Svg height={ScreenHeight} width={ScreenWidth} style={{ position: "absolute" }}>
+//         <Defs>
+//           <Mask id="mask">
+//             <Rect width="100%" height="100%" fill="white" />
+//             <Ellipse
+//               cx={ScreenWidth / 2}
+//               cy={ScreenHeight / 2}
+//               rx={ovalWidth / 2}
+//               ry={ovalHeight / 2}
+//               fill="black"
+//             />
+//           </Mask>
+//         </Defs>
+
+//         <Rect width="100%" height="100%" fill="white" opacity="0.85" mask="url(#mask)" />
+//       </Svg>
+
+//       {/* Text */}
+//       <Text
+//         style={{
+//           position: "absolute",
+//           top: ovalY - 90,
+//           width: "100%",
+//           textAlign: "center",
+//           color: faceAligned ? "green" : "red",
+//           fontSize: 20,
+//           fontWeight: "700",
+//         }}
+//       >
+//         {faceAligned ? "Perfect! Hold Still..." : "Align Your Face Within The Oval"}
+//       </Text>
+
+//       {/* Oval Border */}
+//       <View
+//         style={{
+//           position: "absolute",
+//           top: ovalY,
+//           left: ovalX,
+//           width: ovalWidth,
+//           height: ovalHeight,
+//           borderWidth: 5,
+//           borderColor: faceAligned ? "limegreen" : "red",
+//           borderRadius: ovalWidth / 2,
+//         }}
+//       />
+//     </View>
+//   );
+// }
+
+// /* ------------------ FACE OVAL CHECK ------------------ */
+
+// function mapFaceToScreen(frame, photoWidth, photoHeight) {
+//   return {
+//     x: frame.left / photoWidth,
+//     y: frame.top / photoHeight,
+//     width: frame.width / photoWidth,
+//     height: frame.height / photoHeight
+//   };
+// }
+
+// function isFaceInsideOval(bounds, photoWidth, photoHeight) {
+//   if (!bounds?.frame) return false;
+
+//   const face = mapFaceToScreen(bounds.frame, photoWidth, photoHeight);
+
+//   const oval = { x: 0.15, y: 0.2, width: 0.7, height: 0.6 };
+
+//   const faceLeft = face.x;
+//   const faceRight = face.x + face.width;
+//   const faceTop = face.y;
+//   const faceBottom = face.y + face.height;
+
+//   const ovalLeft = oval.x;
+//   const ovalRight = oval.x + oval.width;
+//   const ovalTop = oval.y;
+//   const ovalBottom = oval.y + oval.height;
+
+//   return (
+//     faceLeft >= ovalLeft &&
+//     faceRight <= ovalRight &&
+//     faceTop >= ovalTop &&
+//     faceBottom <= ovalBottom
+//   );
+// }
+
+// /* ------------------ STYLES ------------------ */
+
+// const styles = StyleSheet.create({
+//   fullScreen: {
+//     flex: 1,
+//     backgroundColor: "white",
+//     position: "absolute",
+//     width: "100%",
+//     height: "100%",
+//     zIndex: 999,
+//   },
+//   fullScreen2: {
+//     flex: 1,
+//     justifyContent: "center",
+//     alignItems: "center",
+//     backgroundColor: "white",
+//   },
+//   cutButton: {
+//     position: "absolute",
+//     top: 20,
+//     left: 20,
+//     padding: 10,
+//     zIndex: 10,
+//   },
+//   text: {
+//     color: "black",
+//     fontSize: 16,
+//     textAlign: "center",
+//     padding: 20,
+//   },
+// });
+
+
+// .......blink eys code ...............
+// import React, { useState, useEffect, useRef } from 'react';
+// import { View, StyleSheet, Text, TouchableOpacity, Platform } from 'react-native';
+// import { Camera, useCameraDevices } from 'react-native-vision-camera';
+// import RNFS from 'react-native-fs';
+// import FaceDetection from '@react-native-ml-kit/face-detection';
+// import Theme from 'FaceEmbading/Theme';
+// import ImageResizer from 'react-native-image-resizer';
+// import { request, openSettings as RNPOpenSettings, PERMISSIONS, RESULTS } from "react-native-permissions";
+// import { XIcon } from 'assets/Svg/svg';
+// import { ScreenHeight, ScreenWidth } from '@freakycoder/react-native-helpers';
+// import Svg, { Rect, Defs, Mask, Ellipse } from "react-native-svg";
+
+// export default function FaceCaptureModalforfacnet({ onCapture }) {
+
+//   const [faceAligned, setFaceAligned] = useState(false);
+//   const [permissionStatus, setPermissionStatus] = useState('loading');
+//   const [device, setDevice] = useState(null);
+//   const [eyeStatus, setEyeStatus] = useState("पलक धीरे-धीरे झपकाओ..");
+//   const [blinkDetected, setBlinkDetected] = useState(false);
+
+//   const cameraRef = useRef(null);
+//   const devices = useCameraDevices();
+
+//   const processingRef = useRef(false);
+//   const capturedRef = useRef(false);
+
+//   // 🔥 FAST BLINK REFS
+//   const prevEyeAvg = useRef(null);
+//   const lastBlinkAt = useRef(0);
+
+//   /* ---------------- PERMISSION ---------------- */
+//   useEffect(() => {
+//     (async () => {
+//       try {
+//         const status = Camera.getCameraPermissionStatus();
+//         if (status === 'not-determined') {
+//           const req = await Camera.requestCameraPermission();
+//           setPermissionStatus(req);
+//         } else {
+//           setPermissionStatus(status);
+//         }
+//       } catch {
+//         setPermissionStatus("denied");
+//       }
+//     })();
+//   }, []);
+
+//   async function askCameraPermission() {
+//     const permission =
+//       Platform.OS === "ios"
+//         ? PERMISSIONS.IOS.CAMERA
+//         : PERMISSIONS.ANDROID.CAMERA;
+
+//     const result = await request(permission);
+//     if (result === RESULTS.GRANTED) {
+//       setPermissionStatus("granted");
+//     } else {
+//       RNPOpenSettings();
+//       onCapture("");
+//     }
+//   }
+
+//   useEffect(() => {
+//     if (!devices) return;
+
+//     if (permissionStatus === "granted" || permissionStatus === "authorized") {
+//       const front = devices.find(d => d.position === "front") || devices[0];
+//       setDevice(front);
+//     }
+
+//     if (permissionStatus === "denied") askCameraPermission();
+//   }, [permissionStatus, devices]);
+
+//   /* ---------------- FACE + FAST BLINK LOOP ---------------- */
+//   useEffect(() => {
+//     if (!device || !cameraRef.current) return;
+
+//     const interval = setInterval(async () => {
+//       if (processingRef.current || capturedRef.current) return;
+//       processingRef.current = true;
+
+//       let snapshotPath;
+
+//       try {
+//         const snap = await cameraRef.current.takeSnapshot({
+//           quality: 0.5,
+//           skipMetadata: true,
+//         });
+
+//         snapshotPath = snap.path;
+//         const uri = "file://" + snap.path;
+
+//         const faces = await FaceDetection.detect(uri, {
+//           classificationMode: "all",
+//         });
+
+//         if (!faces.length) {
+//           setFaceAligned(false);
+//           if (!blinkDetected) setEyeStatus("No face detected");
+//           return;
+//         }
+
+//         const face = faces[0];
+//         const aligned = isFaceInsideOval(face, snap.width, snap.height);
+//         setFaceAligned(aligned);
+//         if (!aligned) return;
+
+//         const l = face.leftEyeOpenProbability;
+//         const r = face.rightEyeOpenProbability;
+//         if (l == null || r == null) return;
+
+//         const avg = (l + r) / 2;
+
+//         // 👁️ FAST BLINK PARAMETERS (tuned)
+//         const DROP_THRESHOLD = 0.25; // sudden close
+//         const CLOSED_LEVEL = 0.45;
+//         const COOLDOWN = 600; // ms
+
+//         if (!blinkDetected) {
+//           setEyeStatus(avg > 0.5 ? " एक बार के लिए पलक धीरे से झपकाओ.." : "😑 Eyes closing");
+//         }
+
+//         if (prevEyeAvg.current !== null) {
+//           const delta = prevEyeAvg.current - avg;
+//           const now = Date.now();
+
+//           // ✅ VERY FAST BLINK DETECTED
+//           if (
+//             delta > DROP_THRESHOLD &&
+//             avg < CLOSED_LEVEL &&
+//             now - lastBlinkAt.current > COOLDOWN
+//           ) {
+//             lastBlinkAt.current = now;
+//             setBlinkDetected(true);
+//             setEyeStatus(" कृपया चेहरा स्थिर रखें...");
+//             capturedRef.current = true;
+//             clearInterval(interval);
+
+//             // small settle delay improves sharpness
+//             setTimeout(() => capturePhoto(), 250);
+//           }
+//         }
+
+//         prevEyeAvg.current = avg;
+
+//       } catch (e) {
+//         console.log("Blink error:", e);
+//       } finally {
+//         if (snapshotPath) RNFS.unlink(snapshotPath).catch(() => {});
+//         processingRef.current = false;
+//       }
+//     }, 80); // 🔥 80ms = micro-blink safe
+
+//     return () => clearInterval(interval);
+//   }, [device, blinkDetected]);
+
+//   /* ---------------- FINAL CAPTURE ---------------- */
+//   async function capturePhoto() {
+//     try {
+//       if (!cameraRef.current) return;
+
+//       const photo = await cameraRef.current.takePhoto({
+//         qualityPrioritization: "quality",
+//         skipMetadata: false,
+//       });
+
+//       const resized = await ImageResizer.createResizedImage(
+//         "file://" + photo.path,
+//         photo.width,
+//         photo.height,
+//         "JPEG",
+//         100,
+//         270
+//       );
+
+//       const savePath =
+//         RNFS.DocumentDirectoryPath + `/myFace_${Date.now()}.jpg`;
+
+//       await RNFS.copyFile(resized.uri.replace("file://", ""), savePath);
+
+//       onCapture({ uri: "file://" + savePath });
+
+//     } catch (e) {
+//       console.log("Final capture error:", e);
+//     }
+//   }
+
+//   /* ---------------- UI ---------------- */
+//   if (!device || !["granted", "authorized"].includes(permissionStatus)) {
+//     return (
+//       <View style={styles.fullScreen2}>
+//         <Text>Camera permission required</Text>
+//       </View>
+//     );
+//   }
+
+//   const ovalWidth = ScreenWidth * 0.7;
+//   const ovalHeight = ScreenHeight * 0.45;
+//   const ovalX = (ScreenWidth - ovalWidth) / 2;
+//   const ovalY = (ScreenHeight - ovalHeight) / 2;
+
+//   return (
+//     <View style={styles.fullScreen}>
+
+//       <TouchableOpacity style={styles.cutButton} onPress={() => onCapture("")}>
+//         <XIcon height={30} width={30} color={Theme.colors.black0} />
+//       </TouchableOpacity>
+
+//       <Camera
+//         ref={cameraRef}
+//         style={{ height: ScreenHeight, width: ScreenWidth }}
+//         device={device}
+//         isActive
+//         photo
+//       />
+
+//       <Svg height={ScreenHeight} width={ScreenWidth} style={{ position: "absolute" }}>
+//         <Defs>
+//           <Mask id="mask">
+//             <Rect width="100%" height="100%" fill="white" />
+//             <Ellipse
+//               cx={ScreenWidth / 2}
+//               cy={ScreenHeight / 2}
+//               rx={ovalWidth / 2}
+//               ry={ovalHeight / 2}
+//               fill="black"
+//             />
+//           </Mask>
+//         </Defs>
+//         <Rect width="100%" height="100%" fill="white" opacity="0.85" mask="url(#mask)" />
+//       </Svg>
+
+//       <Text style={{
+//         position: "absolute",
+//         top: ovalY - 90,
+//         width: "100%",
+//         textAlign: "center",
+//         color: blinkDetected ? "green" : faceAligned ? "green" : "red",
+//         fontSize: 18,
+//         fontWeight: "700",
+//       }}>
+//         {!faceAligned
+//           ? "Align your face inside the oval"
+//           : blinkDetected
+//             ? "कृपया चेहरा स्थिर रखें"
+//             : eyeStatus}
+//       </Text>
+
+//       <View style={{
+//         position: "absolute",
+//         top: ovalY,
+//         left: ovalX,
+//         width: ovalWidth,
+//         height: ovalHeight,
+//         borderWidth: 5,
+//         borderColor: blinkDetected ? "green" : faceAligned ? "limegreen" : "red",
+//         borderRadius: ovalWidth / 2,
+//       }} />
+//     </View>
+//   );
+// }
+
+// /* ---------------- FACE OVAL CHECK ---------------- */
+// function isFaceInsideOval(bounds, w, h) {
+//   if (!bounds?.frame) return false;
+//   const f = bounds.frame;
+
+//   const x = f.left / w;
+//   const y = f.top / h;
+//   const fw = f.width / w;
+//   const fh = f.height / h;
+
+//   return x >= 0.15 && x + fw <= 0.85 && y >= 0.2 && y + fh <= 0.8;
+// }
+
+// /* ---------------- STYLES ---------------- */
+// const styles = StyleSheet.create({
+//   fullScreen: {
+//     flex: 1,
+//     backgroundColor: "white",
+//     position: "absolute",
+//     width: "100%",
+//     height: "100%",
+//     zIndex: 999,
+//   },
+//   fullScreen2: {
+//     flex: 1,
+//     justifyContent: "center",
+//     alignItems: "center",
+//     backgroundColor: "white",
+//   },
+//   cutButton: {
+//     position: "absolute",
+//     top: 20,
+//     left: 20,
+//     padding: 10,
+//     zIndex: 10,
+//   },
+// });
+// ......end
+// import React, { useState, useEffect, useRef } from 'react';
+// import { View, StyleSheet, Text, TouchableOpacity, Platform, NativeModules, Alert } from 'react-native';
+// import { Camera, useCameraDevices } from 'react-native-vision-camera';
+// import RNFS from 'react-native-fs';
+// import FaceDetection from '@react-native-ml-kit/face-detection';
+// import Theme from 'FaceEmbading/Theme';
+// import ImageResizer from 'react-native-image-resizer';
+// import { request, openSettings as RNPOpenSettings, PERMISSIONS, RESULTS } from "react-native-permissions";
+// import { XIcon } from 'assets/Svg/svg';
+// import { ScreenHeight, ScreenWidth } from '@freakycoder/react-native-helpers';
+// import Svg, { Rect, Defs, Mask, Ellipse } from "react-native-svg";
+
+// const { FaceNetModule } = NativeModules;
+
+// export default function FaceCaptureModalforfacnet({ onCapture }) {
+
+//   const [faceAligned, setFaceAligned] = useState(false);
+//   const [permissionStatus, setPermissionStatus] = useState('loading');
+//   const [device, setDevice] = useState(null);
+//   const [statusMessage, setStatusMessage] = useState("अपना चेहरा ओवल के अंदर संरेखित करें");
+//   const [livenessStatus, setLivenessStatus] = useState(null);
+//   const [isCapturing, setIsCapturing] = useState(false);
+// const [cameraScore, setCameraScore] = useState(0);
+
+//   const cameraRef = useRef(null);
+//   const devices = useCameraDevices();
+
+//   const processingRef = useRef(false);
+//   const capturedRef = useRef(false);
+
+//   /* ---------------- PERMISSION ---------------- */
+// function getCameraQualityPercentage(device) {
+//   if (!device?.formats?.length) return 0;
+
+//   let score = 0;
+
+//   /* ---------- 1️⃣ Resolution (35%) ---------- */
+//   const resolutions = device.formats
+//     .filter(f => f?.videoWidth && f?.videoHeight)
+//     .map(f => f.videoWidth * f.videoHeight);
+
+//   const maxPixels = resolutions.length ? Math.max(...resolutions) : 0;
+//   const resolutionScore = Math.min(35, (maxPixels / 8_000_000) * 35);
+//   score += resolutionScore;
+
+//   /* ---------- 2️⃣ FPS (25%) ---------- */
+//   const fpsValues = device.formats.flatMap(f =>
+//     Array.isArray(f.frameRateRanges)
+//       ? f.frameRateRanges.map(r => r.maxFrameRate || 0)
+//       : []
+//   );
+
+//   const maxFps = fpsValues.length ? Math.max(...fpsValues) : 0;
+//   const fpsScore = Math.min(25, (maxFps / 60) * 25);
+//   score += fpsScore;
+
+//   /* ---------- 3️⃣ Hardware Level (15%) ---------- */
+//   if (device.hardwareLevel === 'LEVEL_3') score += 15;
+//   else if (device.hardwareLevel?.toLowerCase() === 'full') score += 12;
+//   else if (device.hardwareLevel === 'LIMITED') score += 7;
+
+//   /* ---------- 4️⃣ Zoom (10%) ---------- */
+//   const zoomScore = Math.min(10, ((device.maxZoom || 1) / 10) * 10);
+//   score += zoomScore;
+
+//   /* ---------- 5️⃣ Format Count (15%) ---------- */
+//   const formatScore = Math.min(
+//     15,
+//     (device.formats.length / 300) * 15
+//   );
+//   score += formatScore;
+
+//   return Math.round(Math.min(100, score));
+// }
+
+// useEffect(() => {
+//   if (device) {
+//     const quality = getCameraQualityPercentage(device);
+//     // Alert.alert('📊 Camera Quality:', quality + '%');
+//     setCameraScore(quality);
+//   }
+// }, [device]);
+
+
+
+//   useEffect(() => { 
+//     (async () => {
+//       try {
+//         const status = Camera.getCameraPermissionStatus();
+//         if (status === 'not-determined') {
+//           const req = await Camera.requestCameraPermission();
+//           setPermissionStatus(req);
+//         } else {
+//           setPermissionStatus(status);
+//         }
+//       } catch {
+//         setPermissionStatus("denied");
+//       }
+//     })();
+//   }, []);
+
+//   async function askCameraPermission() {
+//     const permission =
+//       Platform.OS === "ios"
+//         ? PERMISSIONS.IOS.CAMERA
+//         : PERMISSIONS.ANDROID.CAMERA;
+
+//     const result = await request(permission);
+//     if (result === RESULTS.GRANTED) {
+//       setPermissionStatus("granted");
+//     } else {
+//       RNPOpenSettings();
+//       onCapture("");
+//     }
+//   }
+
+//   useEffect(() => {
+//     if (!devices) return;
+
+//     if (permissionStatus === "granted" || permissionStatus === "authorized") {
+//       const front = devices.find(d => d.position === "front") || devices[0];
+//       setDevice(front);
+//     }
+
+//     if (permissionStatus === "denied") askCameraPermission();
+//   }, [permissionStatus, devices]);
+
+//   /* ---------------- FACE DETECTION LOOP ---------------- */
+//   useEffect(() => {
+//     if (!device || !cameraRef.current) return;
+
+//     const interval = setInterval(async () => {
+//       if (processingRef.current || capturedRef.current || isCapturing) return;
+//       processingRef.current = true;
+
+//       let snapshotPath;
+
+//       try {
+//         const snap = await cameraRef.current.takeSnapshot({
+//           quality: 0.5,
+//           skipMetadata: true,
+//         });
+
+//         snapshotPath = snap.path;
+//         const uri = "file://" + snap.path;
+
+//         const faces = await FaceDetection.detect(uri, {
+//           classificationMode: "all",
+//         });
+
+//         if (!faces.length) {
+//           setFaceAligned(false);
+//           setStatusMessage("No face detected");
+//           return;
+//         }
+
+//         const face = faces[0];
+//         const aligned = isFaceInsideOval(face, snap.width, snap.height);
+//         setFaceAligned(aligned);
+        
+//         if (aligned) {
+//           setStatusMessage("चेहरा संरेखित है - कैप्चर हो रहा है...");
+          
+//           // Automatically capture when face is aligned
+//           if (!capturedRef.current && !isCapturing) {
+//             capturedRef.current = true;
+//             setIsCapturing(true);
+//             clearInterval(interval);
+            
+//             // Small delay for better image stability
+//             setTimeout(() => capturePhoto(), 300);
+//           }
+//         } else {
+//           setStatusMessage("अपना चेहरा ओवल के अंदर संरेखित करें");
+//         }
+
+//       } catch (e) {
+//         console.log("Face detection error:", e);
+//       } finally {
+//         if (snapshotPath) RNFS.unlink(snapshotPath).catch(() => {});
+//         processingRef.current = false;
+//       }
+//     }, 60); // Check every 100ms
+
+//     return () => clearInterval(interval);
+//   }, [device, isCapturing]);
+
+//   /* ---------------- FINAL CAPTURE WITH LIVENESS ---------------- */
+//   async function capturePhoto() {
+//     try {
+//       if (!cameraRef.current) return;
+
+//       console.log("📸 ========================================");
+//       console.log("📸 STARTING PHOTO CAPTURE WITH LIVENESS");
+//       console.log("📸 ========================================");
+
+//       setStatusMessage("कैप्चर हो रहा है...");
+
+//       const photo = await cameraRef.current.takePhoto({
+//         qualityPrioritization: "quality",
+//         skipMetadata: false,
+//       });
+
+//       console.log("✅ Photo captured, path:", photo.path);
+
+//       const resized = await ImageResizer.createResizedImage(
+//         "file://" + photo.path,
+//         photo.width,
+//         photo.height,
+//         "JPEG",
+//         100,
+//         270
+//       );
+
+//       console.log("✅ Image resized:", resized.uri);
+
+//       // Convert to base64 for FaceNet module
+//       const base64Image = await RNFS.readFile(resized.uri.replace("file://", ""), 'base64');
+      
+//       console.log("✅ Image converted to base64, length:", base64Image.length);
+//       console.log("🔄 Calling FaceNetModule.captureAndGetEmbedding...");
+
+//       setStatusMessage("लाइवनेस की जांच हो रही है...");
+
+//       // 🔥 CALL FACENET MODULE WITH LIVENESS DETECTION
+//       const result = await FaceNetModule.captureAndGetEmbedding(base64Image);
+
+//       console.log("========================================");
+//       console.log("🎯 FACENET MODULE RESULT (REACT NATIVE):");
+//       console.log("========================================");
+//       console.log("📊 Full Result Object:", JSON.stringify(result, null, 2));
+//       console.log("----------------------------------------");
+//       console.log("✅ Status:", result.status);
+//       console.log("📏 Face Width:", result.faceWidth);
+//       console.log("📏 Face Height:", result.faceHeight);
+//       console.log("🧬 Embedding Size:", result.embedding?.length || 0);
+//       console.log("========================================");
+//       console.log("🔍 LIVENESS DETECTION RESULTS (REACT NATIVE):");
+//       console.log("========================================");
+//       console.log("✅ Is Live:", result.isLive);
+//       console.log("📊 Final Liveness Score:", result.livenessScore?.toFixed(4));
+//       console.log("🏷️  Liveness Label:", result.livenessLabel);
+//       console.log("📈 Liveness Confidence:", result.livenessConfidence);
+//       console.log("🔧 Debug Info:", result.livenessDebug);
+//       console.log("========================================");
+//       console.log("📊 ALL METHOD SCORES:");
+//       console.log("========================================");
+//       if (result.allMethodScores) {
+//         Object.entries(result.allMethodScores).forEach(([method, score]) => {
+//           console.log(`   ${method}: ${score.toFixed(4)}`);
+//         });
+//       }
+//       console.log("========================================");
+//       console.log("🔢 SCORE INTERPRETATION:");
+//       console.log("========================================");
+//       const scoreRange = result.livenessScore >= 0.57 ? "✅ REAL (>0.65) - High Confidence" : 
+//                         result.livenessScore >= 0.55 ? "✅ LIKELY REAL (0.55-0.65) - Medium Confidence" :
+//                         result.livenessScore == 0.54 ? "⚠️  UNCERTAIN (0.45-0.55) - Quality Check Applied" :
+//                           result.livenessScore == 0.53 ? "❌ LIKELY FAKE (0.35-0.45) - Medium Confidence" :
+//                         "❌ FAKE (<0.35) - High Confidence";
+//       console.log(`   ${scoreRange}`);
+//       console.log("========================================");
+//       console.log("📸 Image Info:");
+//       console.log(`   Base64 Length: ${base64Image.length}`);
+//       console.log(`   Face Dimensions: ${result.faceWidth}x${result.faceHeight}`);
+//       console.log("========================================");
+
+//       // Check liveness result
+//       if (!result.isLive) {
+//         console.log("❌ LIVENESS CHECK FAILED!");
+//         console.log("❌ Reason:", result.livenessLabel);
+//         console.log("❌ Score:", result.livenessScore);
+        
+//         setLivenessStatus({
+//           success: false,
+//           message: `लाइवनेस विफल: ${result.livenessLabel}`,
+//           score: result.livenessScore
+//         });
+
+//         setStatusMessage(`लाइवनेस विफल - पुनः प्रयास करें`);
+
+//         // Reset for retry
+//         setTimeout(() => {
+//           capturedRef.current = false;
+//           setIsCapturing(false);
+//           setLivenessStatus(null);
+//           setStatusMessage("अपना चेहरा ओवल के अंदर संरेखित करें");
+//         }, 2000);
+
+//         return;
+//       }
+
+//       console.log("✅ LIVENESS CHECK PASSED!");
+//       console.log("✅ Proceeding with image capture...");
+
+//       setLivenessStatus({
+//         success: true,
+//         message: "लाइवनेस सत्यापित",
+//         score: result.livenessScore
+//       });
+
+//       setStatusMessage("लाइवनेस सत्यापित ✓");
+
+//       // Save the final image
+//       const savePath = RNFS.DocumentDirectoryPath + `/myFace_${Date.now()}.jpg`;
+//       await RNFS.copyFile(resized.uri.replace("file://", ""), savePath);
+
+//       console.log("✅ Final image saved to:", savePath);
+//       console.log("========================================");
+
+//       // Return the captured data with liveness info
+//       onCapture({
+//         uri: "file://" + savePath,
+//         livenessData: {
+//           isLive: result.isLive,
+//           score: result.livenessScore,
+//           label: result.livenessLabel,
+//           confidence: result.livenessConfidence
+//         },
+//         embedding: result.embedding,
+//         faceData: {
+//           width: result.faceWidth,
+//           height: result.faceHeight
+//         }
+//       });
+
+//     } catch (e) {
+//       console.log("========================================");
+//       console.log("❌ ERROR IN CAPTURE PHOTO:");
+//       console.log("========================================");
+//   //     Alert.alert(
+//   //   "Capture Failed",
+//   //   e?.message || "Liveness capture failed"
+//   // );      console.log("Error code:", e.code);
+//       console.log("Full error:", e);
+//       console.log("========================================");
+
+//       setLivenessStatus({
+//         success: false,
+//         message: `त्रुटि: ${e.message}`,
+//         score: 0
+//       });
+
+//       setStatusMessage("त्रुटि - पुनः प्रयास करें");
+
+//       // Reset for retry
+//       setTimeout(() => {
+//         capturedRef.current = false;
+//         setIsCapturing(false);
+//         setLivenessStatus(null);
+//         setStatusMessage("अपना चेहरा ओवल के अंदर संरेखित करें");
+//       }, 2000);
+//     }
+//   }
+
+//   /* ---------------- UI ---------------- */
+//   if (!device || !["granted", "authorized"].includes(permissionStatus)) {
+//     return (
+//       <View style={styles.fullScreen2}>
+//         <Text>Camera permission required</Text>
+//       </View>
+//     );
+//   }
+
+//   const ovalWidth = ScreenWidth * 0.7;
+//   const ovalHeight = ScreenHeight * 0.45;
+//   const ovalX = (ScreenWidth - ovalWidth) / 2;
+//   const ovalY = (ScreenHeight - ovalHeight) / 2;
+
+//   return (
+//     <View style={styles.fullScreen}>
+
+//       <TouchableOpacity style={styles.cutButton} onPress={() => onCapture("")}>
+//         <XIcon height={30} width={30} color={Theme.colors.black0} />
+//       </TouchableOpacity>
+
+//       <Camera
+//         ref={cameraRef}
+//         style={{ height: ScreenHeight, width: ScreenWidth }}
+//         device={device}
+//         isActive
+//         photo
+//       />
+
+//       <Svg height={ScreenHeight} width={ScreenWidth} style={{ position: "absolute" }}>
+//           <Defs>
+//           <Mask id="mask">
+//             <Rect width="100%" height="100%" fill="white" />
+//             <Ellipse
+//               cx={ScreenWidth / 2}
+//               cy={ScreenHeight / 2}
+//               rx={ovalWidth / 2}
+//               ry={ovalHeight / 2}
+//               fill="black"
+//             />
+//           </Mask>
+//         </Defs>
+//         <Rect width="100%" height="100%" fill="white" opacity="0.85" mask="url(#mask)" />
+//       </Svg>
+
+//       <Text style={{
+//         position: "absolute",
+//         top: ovalY - 90,
+//         width: "100%",
+//         textAlign: "center",
+//         color: livenessStatus 
+//           ? (livenessStatus.success ? "green" : "red")
+//           : faceAligned ? "green" : "red",
+//         fontSize: 18,
+//         fontWeight: "700",
+//       }}>
+//         {statusMessage}
+//       </Text>
+
+//       {/* Liveness Score Display */}
+//       {livenessStatus && (
+//         <Text style={{
+//           position: "absolute",
+//           top: ovalY - 60,
+//           width: "100%",
+//           textAlign: "center",
+//           color: livenessStatus.success ? "green" : "red",
+//           fontSize: 14,
+//           fontWeight: "600",
+//         }}>
+//           Score: {livenessStatus.score?.toFixed(4)}
+//         </Text>
+//       )}
+
+//       <View style={{
+//         position: "absolute",
+//         top: ovalY,
+//         left: ovalX,
+//         width: ovalWidth,
+//         height: ovalHeight,
+//         borderWidth: 5,
+//         borderColor: livenessStatus
+//           ? (livenessStatus.success ? "green" : "red")
+//           : isCapturing
+//             ? "orange" 
+//             : faceAligned ? "limegreen" : "red",
+//         borderRadius: ovalWidth / 2,
+//       }} />
+//     </View>
+//   );
+// }
+
+// /* ---------------- FACE OVAL CHECK ---------------- */
+// function isFaceInsideOval(bounds, w, h) {
+//   if (!bounds?.frame) return false;
+//   const f = bounds.frame;
+
+//   const x = f.left / w;
+//   const y = f.top / h;
+//   const fw = f.width / w;
+//   const fh = f.height / h;
+
+//   return x >= 0.15 && x + fw <= 0.85 && y >= 0.2 && y + fh <= 0.8;
+// }
+
+// /* ---------------- STYLES ---------------- */
+// const styles = StyleSheet.create({
+//   fullScreen: {
+//     flex: 1,
+//     backgroundColor: "white",
+//     position: "absolute",
+//     width: "100%",
+//     height: "100%",
+//     zIndex: 999,
+//   },
+//   fullScreen2: {
+//     flex: 1,
+//     justifyContent: "center",
+//     alignItems: "center",
+//     backgroundColor: "white",
+//   },
+//   cutButton: {
+//     position: "absolute",
+//     top: 20,
+//     left: 20,
+//     padding: 10,
+//     zIndex: 10,
+//   },
+// });
+import React, { useState, useEffect, useRef } from 'react';
+import { View, StyleSheet, Text, TouchableOpacity, Platform, NativeModules, Alert, ActivityIndicator } from 'react-native';
+import { Camera, useCameraDevices } from 'react-native-vision-camera';
+import RNFS from 'react-native-fs';
+import FaceDetection from '@react-native-ml-kit/face-detection';
+import Theme from 'FaceEmbading/Theme';
+import ImageResizer from 'react-native-image-resizer';
+import { request, openSettings as RNPOpenSettings, PERMISSIONS, RESULTS } from "react-native-permissions";
+import { XIcon } from 'assets/Svg/svg';
+import { ScreenHeight, ScreenWidth } from '@freakycoder/react-native-helpers';
+import Svg, { Rect, Defs, Mask, Ellipse } from "react-native-svg";
+
+const { FaceNetModule } = NativeModules;
+
+// Device-specific rotation mapping
+const DEVICE_ROTATION_MAP = {
+  'realme': 0,
+  'oppo': 0,
+  'vivo': 0,
+  'samsung': 0,
+  'xiaomi': 90,
+  'redmi': 90,
+  'poco': 90,
+  'oneplus': 90,
+  'google': 90,
+  'motorola': 90,
+  'moto': 90,
+  'apple': 270,
+};
+
+// Get device brand
+const getDeviceBrand = () => {
+  try {
+    if (Platform.OS === 'android') {
+      const brand = Platform.constants?.Brand || '';
+      const manufacturer = Platform.constants?.Manufacturer || '';
+      return (brand || manufacturer).toLowerCase();
+    }
+    return 'apple';
+  } catch (e) {
+    return Platform.OS === 'ios' ? 'apple' : 'unknown';
+  }
+};
+
+// Get rotation angle based on device
+const getRotationForDevice = () => {
+  const brand = getDeviceBrand();
+  console.log('📱 Device Brand:', brand);
+
+  for (const [key, rotation] of Object.entries(DEVICE_ROTATION_MAP)) {
+    if (brand.includes(key)) {
+      console.log(`🔄 Using ${rotation}° rotation for ${key}`);
+      return rotation;
+    }
+  }
+
+  const defaultRotation = Platform.OS === 'ios' ? 270 : 0;
+  console.log(`🔄 Using default ${defaultRotation}° rotation`);
+  return defaultRotation;
+};
+
+export default function FaceCaptureModalforfacnet({ onCapture, closebutton}) {
+
+  const [faceAligned, setFaceAligned] = useState(false);
+  const [permissionStatus, setPermissionStatus] = useState('loading');
+  const [device, setDevice] = useState(null);
+  const [statusMessage, setStatusMessage] = useState("Align your face within the oval");
+  const [livenessStatus, setLivenessStatus] = useState(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [cameraScore, setCameraScore] = useState(0);
+  const [deviceBrand, setDeviceBrand] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
+const[close,setclose]=useState(false);
+  const cameraRef = useRef(null);
+  const devices = useCameraDevices();
+
+  const processingRef = useRef(false);
+  const capturedRef = useRef(false);
+
+  /* ---------------- DETECT DEVICE ---------------- */
+  useEffect(() => {
+    const brand = getDeviceBrand();
+    setDeviceBrand(brand);
+  }, []);
+
+  /* ---------------- CAMERA QUALITY ---------------- */
+  function getCameraQualityPercentage(device) {
+    if (!device?.formats?.length) return 0;
+
+    let score = 0;
+
+    const resolutions = device.formats
+      .filter(f => f?.videoWidth && f?.videoHeight)
+      .map(f => f.videoWidth * f.videoHeight);
+
+    const maxPixels = resolutions.length ? Math.max(...resolutions) : 0;
+    const resolutionScore = Math.min(35, (maxPixels / 8_000_000) * 35);
+    score += resolutionScore;
+
+    const fpsValues = device.formats.flatMap(f =>
+      Array.isArray(f.frameRateRanges)
+        ? f.frameRateRanges.map(r => r.maxFrameRate || 0)
+        : []
+    );
+
+    const maxFps = fpsValues.length ? Math.max(...fpsValues) : 0;
+    const fpsScore = Math.min(25, (maxFps / 60) * 25);
+    score += fpsScore;
+
+    if (device.hardwareLevel === 'LEVEL_3') score += 15;
+    else if (device.hardwareLevel?.toLowerCase() === 'full') score += 12;
+    else if (device.hardwareLevel === 'LIMITED') score += 7;
+
+    const zoomScore = Math.min(10, ((device.maxZoom || 1) / 10) * 10);
+    score += zoomScore;
+
+    const formatScore = Math.min(15, (device.formats.length / 300) * 15);
+    score += formatScore;
+
+    return Math.round(Math.min(100, score));
+  }
+
+  useEffect(() => {
+    setclose(closebutton);
+    console.log("closebutton",closebutton);
+    if (device) {
+      const quality = getCameraQualityPercentage(device);
+      setCameraScore(quality);
+      console.log(`📱 Camera Quality: ${quality}/100`);
+    }
+  }, [device]);
+
+  /* ---------------- PERMISSION ---------------- */
+  useEffect(() => { 
+    (async () => {
+      try {
+        const status = Camera.getCameraPermissionStatus();
+        if (status === 'not-determined') {
+          const req = await Camera.requestCameraPermission();
+          setPermissionStatus(req);
+        } else {
+          setPermissionStatus(status);
+        }
+      } catch {
+        setPermissionStatus("denied");
+      }
+    })();
+  }, []);
+
+  async function askCameraPermission() {
+    const permission =
+      Platform.OS === "ios"
+        ? PERMISSIONS.IOS.CAMERA
+        : PERMISSIONS.ANDROID.CAMERA;
+
+    const result = await request(permission);
+    if (result === RESULTS.GRANTED) {
+      setPermissionStatus("granted");
+    } else {
+      RNPOpenSettings();
+      onCapture("");
+    }
+  }
+
+  useEffect(() => {
+    if (!devices) return;
+
+    if (permissionStatus === "granted" || permissionStatus === "authorized") {
+      const front = devices.find(d => d.position === "front") || devices[0];
+      setDevice(front);
+    }
+
+    if (permissionStatus === "denied") askCameraPermission();
+  }, [permissionStatus, devices]);
+
+  /* ---------------- FACE DETECTION LOOP (Using working timing) ---------------- */
+  useEffect(() => {
+    if (!device || !cameraRef.current) return;
+
+    const interval = setInterval(async () => {
+      if (processingRef.current || capturedRef.current || isCapturing) return;
+      processingRef.current = true;
+
+      let snapshotPath;
+
+      try {
+        const snap = await cameraRef.current.takeSnapshot({
+          quality: 0.5,
+          skipMetadata: true,
+        });
+
+        snapshotPath = snap.path;
+        const uri = "file://" + snap.path;
+
+        const faces = await FaceDetection.detect(uri, {
+          classificationMode: "all",
+        });
+
+        if (!faces.length) {
+          setFaceAligned(false);
+          setStatusMessage("Align your face inside the oval.");
+          return;
+        }
+
+        const face = faces[0];
+        const aligned = isFaceInsideOval(face, snap.width, snap.height);
+        setFaceAligned(aligned);
+        
+        if (aligned) { 
+          // Automatically capture when face is aligned (like working code)
+          if (!capturedRef.current && !isCapturing) {
+            capturedRef.current = true;
+            setIsCapturing(true);
+            clearInterval(interval);
+            
+            // Small delay for better stability
+            setTimeout(() => capturePhoto(), 300);
+          }
+        } else {
+          setStatusMessage("Align your face inside the oval.");
+        }
+
+      } catch (e) {
+        console.log("Face detection error:", e);
+      } finally {
+        if (snapshotPath) RNFS.unlink(snapshotPath).catch(() => {});
+        processingRef.current = false;
+      }
+    }, 60); // Use working code's timing (60ms)
+
+    return () => clearInterval(interval);
+  }, [device, isCapturing]);
+
+  /* ---------------- CAPTURE WITH DEVICE-SPECIFIC ROTATION ---------------- */
+  async function capturePhoto() {
+    const startTime = Date.now();
+    let photoPath = null;
+    
+    try {
+      if (!cameraRef.current) {
+        throw new Error("Camera reference not available");
+      }
+
+      console.log("========================================");
+      console.log("📸 STARTING CAPTURE PROCESS");
+      console.log("   Device Brand:", deviceBrand);
+      console.log("   Camera Quality:", cameraScore);
+      console.log("   Retry Count:", retryCount);
+      console.log("========================================");
+
+      setStatusMessage("Capturing image..."
+);
+
+      // Step 1: Take photo
+      const photo = await cameraRef.current.takePhoto({
+        qualityPrioritization: "quality",
+        skipMetadata: false,
+        enableShutterSound: false,
+      });
+
+      photoPath = photo.path;
+      console.log("✅ Photo captured:", {
+        width: photo.width,
+        height: photo.height,
+        path: photo.path
+      });
+
+      setStatusMessage("Processing...");
+
+      // Convert photo directly to base64 (no resizing)
+      const base64Image = await RNFS.readFile(
+        photo.path, 
+        'base64'
+      );
+
+      console.log(`✅ Base64: ${(base64Image.length / 1024).toFixed(0)}KB`);
+
+      setStatusMessage("Verifying liveness...");
+
+      // Step 7: Call FaceNet with timeout
+      const timeoutDuration = cameraScore < 50 ? 45000 : 30000;
+      
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error(`Timeout (${timeoutDuration/1000}s)`)), timeoutDuration)
+      );
+
+      const resultPromise = FaceNetModule.captureAndGetEmbedding(base64Image);
+      const result = await Promise.race([resultPromise, timeoutPromise]);
+
+      const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`⏱️ Processing time: ${processingTime}s`);
+
+      console.log("========================================");
+      console.log("🎯 LIVENESS RESULT:");
+      console.log("   Is Live:", result.isLive);
+      console.log("   Score:", result.livenessScore);
+      console.log("   Label:", result.livenessLabel);
+      console.log("========================================");
+
+      // Handle liveness failure
+      if (!result.isLive) {
+        console.log("❌ LIVENESS CHECK FAILED");
+        
+        const errorLabel = (result.livenessLabel || '').toLowerCase();
+       let errorMessage = "Please present a real face";
+let suggestions =
+  "• Move to good lighting\n• Look directly at the camera\n• Keep the phone steady";
+
+        
+if (errorLabel.includes("tilt")) {
+  errorMessage = "Keep your head straight";
+  suggestions =
+    "• Hold your head straight\n• Keep phone at eye level\n• Do not tilt your head";
+} else if (result.beautyModeDetected) {
+  errorMessage = "Beauty mode detected";
+  suggestions =
+    "• Disable beauty mode\n• Turn off AI enhancements\n• Remove filters";
+} else if (result.isPrintOrScreen) {
+  errorMessage = "Printed image or screen detected";
+  suggestions =
+    "• Present a real face\n• Do not use photos or screens";
+} else if (errorLabel.includes("blur")) {
+  errorMessage = "Image is blurry";
+  suggestions =
+    "• Hold phone steady\n• Improve lighting";
+}
+
+
+        setLivenessStatus({
+          success: false,
+          message: errorMessage,
+          score: result.livenessScore
+        });
+
+setStatusMessage(`${errorMessage}. Please try again`);
+
+        const newRetryCount = retryCount + 1;
+        setRetryCount(newRetryCount);
+
+        Alert.alert(
+          "❌ Liveness verification failed",
+          `${errorMessage}\n\n📊 Details:\n` +
+          `• Score: ${result.livenessScore?.toFixed(4)}\n` +
+          `• Camera: ${cameraScore}/100\n` +
+          `• Device: ${deviceBrand}\n` +
+          `• Label: ${result.livenessLabel}\n\n` +
+          `💡 Suggestions:\n${suggestions}\n\n` +
+          `Attempts: ${newRetryCount}/3`,
+          [
+            { 
+              text: newRetryCount >= 3 ? "Cancel" : "Retry", 
+              onPress: () => {
+                if (newRetryCount >= 3) {
+                  setRetryCount(0);
+                  onCapture("");
+                } else {
+                  resetCapture();
+                }
+              },
+              style: newRetryCount >= 3 ? "cancel" : "default"
+            },
+            ...(newRetryCount >= 3 ? [{
+              text: "Start Over",
+              onPress: () => {
+                setRetryCount(0);
+                resetCapture();
+              }
+            }] : [])
+          ]
+        );
+
+        if (newRetryCount < 3) {
+          setTimeout(() => resetCapture(), 2000);
+        }
+        
+        return;
+      }
+
+      // Success!
+      console.log("✅ LIVENESS CHECK PASSED");
+      setRetryCount(0);
+
+      setLivenessStatus({
+        success: true,
+        message: "Verified ✓",
+        score: result.livenessScore
+      });
+
+      setStatusMessage("Success! ✓");
+      const savePath = RNFS.DocumentDirectoryPath + `/myFace_${Date.now()}.jpg`;
+      await RNFS.copyFile(photo.path, savePath);
+
+      console.log("✅ Image saved:", savePath);
+      console.log("========================================");
+ onCapture({
+                uri: "file://" + savePath,
+                livenessData: {
+                  isLive: result.isLive,
+                  score: result.livenessScore,
+                  label: result.livenessLabel,
+                  confidence: result.livenessConfidence,
+                  cameraQuality: cameraScore,
+                  processingTime: processingTime,
+                  deviceBrand: deviceBrand
+                },
+                embedding: result.embedding,
+                faceData: {
+                  width: result.faceWidth,
+                  height: result.faceHeight
+                }
+              });
+      // Alert.alert(
+      //   "✅ लाइवनेस सत्यापन सफल",
+      //   `सत्यापित!\n\n📊 विवरण:\n` +
+      //   `• Score: ${result.livenessScore?.toFixed(4)}\n` +
+      //   `• Camera: ${cameraScore}/100\n` +
+      //   `• Time: ${processingTime}s\n` +
+      //   `• Device: ${deviceBrand}\n` +
+      //   `• Image: ${photo.width}x${photo.height}`,
+      //   [
+      //     { 
+      //       text: "जारी रखें", 
+      //       onPress: () => {
+             
+      //       }
+      //     }
+      //   ],
+      //   { cancelable: false }
+      // );
+
+    } catch (e) {
+      console.log("========================================");
+      console.log("❌ CAPTURE ERROR:");
+      console.log("   Message:", e.message);
+      console.log("========================================");
+
+      setLivenessStatus({
+        success: false,
+        message: "Error",
+        score: 0
+      });
+
+      let errorMsg = "Error - Please try again";
+      
+      if (e.message.includes("timeout") || e.message.includes("Timeout")) {
+        errorMsg = "Processing slow - Please try again";
+      } else if (e.message.toLowerCase().includes("tilt")) {
+        errorMsg = "Keep your head straight";
+        
+       
+        return;
+      }
+
+      setStatusMessage(errorMsg);
+      setRetryCount(retryCount + 1);
+      setTimeout(() => resetCapture(), 1500);
+      
+    } finally {
+      // Cleanup temporary files
+      if (photoPath) {
+        RNFS.unlink(photoPath).catch(() => {});
+      }
+    }
+  }
+
+  /* ---------------- RESET ---------------- */
+  function resetCapture() {
+    capturedRef.current = false;
+    setIsCapturing(false);
+    setLivenessStatus(null);
+    setStatusMessage("Align your face inside the oval");
+  }
+
+  /* ---------------- UI ---------------- */
+  if (!device || !["granted", "authorized"].includes(permissionStatus)) {
+    return (
+      <View style={styles.fullScreen2}>
+        <ActivityIndicator size="large" color={Theme.colors.primary} />
+        <Text style={{ marginTop: 20 }}>Camera loading...</Text>
+      </View>
+    );
+  }
+
+  const ovalWidth = ScreenWidth * 0.7;
+  const ovalHeight = ScreenHeight * 0.45;
+  const ovalX = (ScreenWidth - ovalWidth) / 2;
+  const ovalY = (ScreenHeight - ovalHeight) / 2;
+
+  return (
+    <View style={styles.fullScreen}>
+
+     {
+      close && ( <TouchableOpacity style={styles.cutButton} onPress={() => onCapture("")}>
+        <XIcon height={30} width={30} color={Theme.colors.white} />
+      </TouchableOpacity>)
+     }
+
+      {/* Camera Quality Badge */}
+      {/* {cameraScore > 0 && (
+        <View style={styles.qualityBadge}>
+          <Text style={styles.qualityText}>📱 {cameraScore}/100</Text>
+          {deviceBrand && (
+            <Text style={styles.brandText}>{deviceBrand.toUpperCase()}</Text>
+          )}
+        </View>
+      )} */}
+
+      <Camera
+        ref={cameraRef}
+        style={{ height: ScreenHeight, width: ScreenWidth }}
+        device={device}
+        isActive
+        photo
+      />
+
+      <Svg height={ScreenHeight} width={ScreenWidth} style={{ position: "absolute" }}>
+        <Defs>
+          <Mask id="mask">
+            <Rect width="100%" height="100%" fill="white" />
+            <Ellipse
+              cx={ScreenWidth / 2}
+              cy={ScreenHeight / 2}
+              rx={ovalWidth / 2}
+              ry={ovalHeight / 2}
+              fill="black"
+            />
+          </Mask>
+        </Defs>
+        <Rect width="100%" height="100%" fill="white" opacity="0.85" mask="url(#mask)" />
+      </Svg>
+
+      <Text style={[styles.statusText, {
+        top: ovalY - 90,
+        color: livenessStatus 
+          ? (livenessStatus.success ? "green" : "red")
+          : isCapturing
+            ? "orange"
+            : faceAligned ? "green" : "red",
+      }]}>
+        {statusMessage}
+      </Text>
+
+      {livenessStatus && (
+        <Text style={[styles.scoreText, { top: ovalY - 60 }]}>
+          Score: {livenessStatus.score?.toFixed(4)}
+        </Text>
+      )}
+
+      {isCapturing && (
+        <ActivityIndicator 
+          size="large" 
+          color="#FFF" 
+          style={{ position: 'absolute', top: ovalY - 50, alignSelf: 'center' }} 
+        />
+      )}
+
+      <View style={{
+        position: "absolute",
+        top: ovalY,
+        left: ovalX,
+        width: ovalWidth,
+        height: ovalHeight,
+        borderWidth: 5,
+        borderColor: livenessStatus
+          ? (livenessStatus.success ? "green" : "red")
+          : isCapturing
+            ? "orange" 
+            : faceAligned ? "limegreen" : "red",
+        borderRadius: ovalWidth / 2,
+      }} />
+    </View>
+  );
+}
+
+/* ---------------- FACE OVAL CHECK (From working code) ---------------- */
+function isFaceInsideOval(bounds, w, h) {
+  if (!bounds?.frame) return false;
+  const f = bounds.frame;
+
+  const x = f.left / w;
+  const y = f.top / h;
+  const fw = f.width / w;
+  const fh = f.height / h;
+
+  return x >= 0.15 && x + fw <= 0.85 && y >= 0.2 && y + fh <= 0.8;
+}
+
+/* ---------------- STYLES ---------------- */
+const styles = StyleSheet.create({
+  fullScreen: {
+    flex: 1,
+    backgroundColor: "black",
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+    zIndex: 999,
+  },
+  fullScreen2: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "white",
+  },
+  cutButton: {
+    position: "absolute",
+    top: 40,
+    left: 20,
+    padding: 10,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 25,
+  },
+  qualityBadge: {
+    position: "absolute",
+    top: 40,
+    right: 20,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+    zIndex: 10,
+  },
+  qualityText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  brandText: {
+    color: '#FFF',
+    fontSize: 10,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  statusText: {
+    position: "absolute",
+    width: "100%",
+    textAlign: "center",
+    fontSize: 18,
+    fontWeight: "700",
+    paddingHorizontal: 20,
+  },
+  scoreText: {
+    position: "absolute",
+    width: "100%",
+    textAlign: "center",
+    fontSize: 14,
+    fontWeight: "600",
+    color: "white",
+  },
+}); 
