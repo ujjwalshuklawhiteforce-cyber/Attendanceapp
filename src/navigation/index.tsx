@@ -1,29 +1,27 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Platform,
   StyleSheet,
   View,
-  useColorScheme,
-  Modal,
-  TouchableOpacity,
-  Text,
-  ActivityIndicator,
-  Dimensions,
-  Platform
+  useWindowDimensions,
 } from "react-native";
-import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import Icon, { IconType } from "react-native-dynamic-vector-icons";
 import { isReadyRef, navigationRef } from "react-navigation-helpers";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
-import { useRef } from "react";
-import NetInfo from '@react-native-community/netinfo';
+import NetInfo from "@react-native-community/netinfo";
 
 // Screens
 import HomeScreen from "@screens/home/HomeScreen";
 import ProfileScreen from "@screens/profile/ProfileScreen";
-import DetailScreen from "@screens/leavedetail/LeaveDetailScreen";
-import TaskScreen from "@screens/task/TaskScreen";
+import LeaveDetailScreen from "@screens/leavedetail/LeaveDetailScreen";
 import Appss from "@screens/task/Tasklist";
 import LoginScreen from "@screens/login/LoginScreen";
 import OnboardingScreen from "@screens/obboarding/OnboardingScreen";
@@ -35,13 +33,11 @@ import AttendanceSheet from "@screens/attendancesheet/AttendanceSheet";
 import PaymentSlip from "@screens/payementslip/PaymentSlip";
 import TermsAndConditions from "@screens/servicescreen/Terms&Condition";
 import PrivacyandPolicy from "@screens/servicescreen/Privacy&policy";
-import ProfileEditScreen from "@screens/profile/ProfileViewScreen";
 import ChangePassword from "@screens/passwordsecurity/ChangePassword";
-import ProfileViewScreen from "@screens/profile/ProfileViewScreen";
 import ProfileEditFormScreen from "@screens/profile/ProfileEditFormPage";
 import { SCREENS } from "@shared-constants";
 import { LightTheme } from "@theme/themes";
-import { ScreenHeight, ScreenWidth } from "@freakycoder/react-native-helpers";
+import { ScreenWidth } from "@freakycoder/react-native-helpers";
 import TaskCreator from "@screens/addTask/CreateTask";
 import AdminHomeScreen from "@screens/home/AdminHomeScreen";
 import AttendanceSummaryScreen from "@screens/home/Adminattendancelist";
@@ -49,152 +45,95 @@ import AdminAttendanceSheet from "@screens/attendancesheet/AdminAttendanceSheet"
 import Employeedurationlist from "@screens/home/Employeedurationlist";
 import MapWithRoute from "@screens/attendancesheet/Mapview/mapview";
 import AdminAttendanceClientlist from "@screens/home/Clientlist/Clientlist";
-import AdminAttendancesheetlist from "@screens/home/Adminattendancelist";
 import VideoPlayerFullScreen from "@screens/home/components/Video refrence/Videorefrence";
-import EmbeddingScreen from "assets/FaceSreen/Facematchscreen";
 import FaceMatchScreen from "@shared-components/registercamera/Registerface";
 import LeaveRecordsScreen from "@screens/leaves/Leaverecordscreen";
-import LeaveDetailScreen from "@screens/leavedetail/LeaveDetailScreen";
 import LeaveRequestsScreen from "@screens/leaves/Leaveapproval";
 import TeamScreen from "@screens/team/TeamScreen";
-import EmployeeAllowanceForm from './Allowance/Allowance';
+import EmployeeAllowanceForm from "./Allowance/Allowance";
 import NetworkStatusBar from "../../networkconnectivity";
 import PasswordRecoveryScreen from "@screens/login/ForgotPassword/ForgotPassword";
-import Toast from "react-native-toast-message";
 import AttendanceRegularizationScreen from "@screens/Rgularisation/Regualrisation";
 import CompOffAccrualScreen from "@screens/comoff/Compoff";
+import Allotedteam from ".././screens/home/Allotedteam/Allotedteam"
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-const CustomTabBarButton = ({ children, onPress }) => (
-  <TouchableOpacity
-    style={{
-      top: -10,
-      justifyContent: 'center',
-      alignItems: 'center',
-      ...styles.shadow,
-    }}
-    onPress={onPress}
-  >
-    <View
-      style={{
-        width: 70,
-        height: 70,
-        borderRadius: 55,
-        backgroundColor: "rgb(29,91,65)",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        marginBottom: 30,
-        margin: 10,
-      }}
-    >
-      <View style={{
-        width: 60,
-        height: 60,
-        borderRadius: 35,
-        backgroundColor: "white",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        margin: 20,
-        borderColor: "green",
-        borderWidth: 2,
-      }}>
-        {children}
-      </View>
-    </View>
-  </TouchableOpacity>
-);
+const horizontalAnimation: any = {
+  cardStyleInterpolator: ({ current, layouts }: any) => ({
+    cardStyle: {
+      transform: [
+        {
+          translateX: current.progress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [layouts.screen.width, 0],
+          }),
+        },
+      ],
+    },
+  }),
+};
 
 // Custom hook for responsive tab bar configuration
 const useResponsiveTabBar = () => {
   const insets = useSafeAreaInsets();
-  const { width, height } = Dimensions.get('window');
+  const { width } = useWindowDimensions();
 
   const isSmallDevice = width < 375;
   const isMediumDevice = width >= 375 && width < 414;
-  const isLargeDevice = width >= 414;
 
-  const getResponsiveValue = () => {
-    const baseTabBarHeight = isSmallDevice ? 60 : isMediumDevice ? 65 : 70;
-
-    if (isSmallDevice) {
-      return {
-        tabBarHeight: baseTabBarHeight + insets.bottom,
-        iconSize: 20,
-        fontSize: 9,
-        showLabels: false,
-        horizontalPadding: width * 0.02,
-        activeLineWidth: width * 0.12,
-        activeBackgroundWidth: width * 0.12,
-        bottomPadding: insets.bottom > 0 ? insets.bottom : 8,
-      };
-    } else if (isMediumDevice) {
-      return {
-        tabBarHeight: baseTabBarHeight + insets.bottom,
-        iconSize: 22,
-        fontSize: 10,
-        showLabels: true,
-        horizontalPadding: width * 0.03,
-        activeLineWidth: width * 0.15,
-        activeBackgroundWidth: width * 0.15,
-        bottomPadding: insets.bottom > 0 ? insets.bottom : 8,
-      };
-    } else {
-      return {
-        tabBarHeight: baseTabBarHeight + insets.bottom,
-        iconSize: 24,
-        fontSize: 11,
-        showLabels: true,
-        horizontalPadding: width * 0.036,
-        activeLineWidth: width * 0.18,
-        activeBackgroundWidth: width * 0.18,
-        bottomPadding: insets.bottom > 0 ? insets.bottom : 8,
-      };
-    }
+  const baseTabBarHeight = isSmallDevice ? 60 : isMediumDevice ? 65 : 70;
+  const common = {
+    tabBarHeight: baseTabBarHeight + insets.bottom,
+    bottomPadding: insets.bottom > 0 ? insets.bottom : 8,
+    insets,
   };
 
-  return { ...getResponsiveValue(), insets };
+  if (isSmallDevice) {
+    return {
+      ...common,
+      iconSize: 20,
+      fontSize: 9,
+      showLabels: false,
+      horizontalPadding: width * 0.02,
+      activeLineWidth: width * 0.12,
+      activeBackgroundWidth: width * 0.12,
+    };
+  }
+
+  if (isMediumDevice) {
+    return {
+      ...common,
+      iconSize: 22,
+      fontSize: 10,
+      showLabels: true,
+      horizontalPadding: width * 0.03,
+      activeLineWidth: width * 0.15,
+      activeBackgroundWidth: width * 0.15,
+    };
+  }
+
+  return {
+    ...common,
+    iconSize: 24,
+    fontSize: 11,
+    showLabels: true,
+    horizontalPadding: width * 0.036,
+    activeLineWidth: width * 0.18,
+    activeBackgroundWidth: width * 0.18,
+  };
 };
 
-const NavigationContent = () => {
-  const { isLoggedIn, isOnboarded, isAdmin, isLoading } = useAuth();
-  const [modalVisible, setModalVisible] = useState(false);
-
-  const connectivityTimerRef = useRef(null);
-  const prevConnectedRef = useRef(null);
-  const isInitializedRef = useRef(false);
-  const scheme = useColorScheme();
-  const isDarkMode = scheme === "dark";
+/**
+ * Tab navigator ab top-level component hai.
+ * Pehle `renderTabNavigation` NavigationContent ke andar tha, to har render par
+ * naya component type ban ta tha aur poora tab tree remount hota tha.
+ */
+const MainTabs = () => {
+  const { isAdmin } = useAuth();
   const responsiveConfig = useResponsiveTabBar();
 
-  const horizontalAnimation = {
-    cardStyleInterpolator: ({ current, layouts }) => {
-      return {
-        cardStyle: {
-          transform: [
-            {
-              translateX: current.progress.interpolate({
-                inputRange: [0, 1],
-                outputRange: [layouts.screen.width, 0],
-              }),
-            },
-          ],
-        },
-      };
-    },
-  };
-
-  useEffect(() => {
-
-    return () => {
-      isReadyRef.current = false;
-
-    };
-  }, []);
-
-  const renderTabIcon = (route, focused, color, size) => {
+  const renderTabIcon = (route: any, focused: boolean, color: string) => {
     let iconName = "home";
     switch (route.name) {
       case SCREENS.HOME:
@@ -221,8 +160,22 @@ const NavigationContent = () => {
     }
     return (
       <View style={styles.iconContainer}>
-        {focused && <View style={[styles.isActiveLine, { width: responsiveConfig.activeLineWidth }]} />}
-        {focused && <View style={[styles.isActive, { width: responsiveConfig.activeBackgroundWidth }]} />}
+        {focused && (
+          <View
+            style={[
+              styles.isActiveLine,
+              { width: responsiveConfig.activeLineWidth },
+            ]}
+          />
+        )}
+        {focused && (
+          <View
+            style={[
+              styles.isActive,
+              { width: responsiveConfig.activeBackgroundWidth },
+            ]}
+          />
+        )}
         <Icon
           name={iconName}
           type={IconType.Ionicons}
@@ -234,89 +187,77 @@ const NavigationContent = () => {
     );
   };
 
-  const renderTabNavigation = () => {
-    return (
-      <Tab.Navigator
-        screenOptions={({ route }) => ({
-          headerShown: false,
-          tabBarIcon: ({ focused, color, size }) =>
-            renderTabIcon(route, focused, color, size),
-          tabBarActiveTintColor: "white",
-          tabBarInactiveTintColor: "rgba(255, 255, 255, 0.6)",
-          tabBarShowLabel: responsiveConfig.showLabels,
-          tabBarLabelStyle: {
-            fontSize: responsiveConfig.fontSize,
-            fontWeight: '600',
-            marginTop: -2,
-            marginBottom: 2,
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }: any) => ({
+        headerShown: false,
+        tabBarIcon: ({ focused, color }: any) =>
+          renderTabIcon(route, focused, color),
+        tabBarActiveTintColor: "white",
+        tabBarInactiveTintColor: "rgba(255, 255, 255, 0.6)",
+        tabBarShowLabel: responsiveConfig.showLabels,
+        tabBarLabelStyle: {
+          fontSize: responsiveConfig.fontSize,
+          fontWeight: "600",
+          marginTop: -2,
+          marginBottom: 2,
+        },
+        tabBarStyle: {
+          height: responsiveConfig.tabBarHeight,
+          position: "relative",
+          paddingHorizontal: responsiveConfig.horizontalPadding,
+          paddingTop: 8,
+          paddingBottom: responsiveConfig.bottomPadding,
+          backgroundColor: "rgb(29,91,65)",
+          borderTopWidth: 0,
+          elevation: 8,
+          shadowColor: "#000",
+          shadowOffset: {
+            width: 0,
+            height: -2,
           },
-          tabBarStyle: {
-            height: responsiveConfig.tabBarHeight,
-            position: "relative",
-            paddingHorizontal: responsiveConfig.horizontalPadding,
-            paddingTop: 8,
-            paddingBottom: responsiveConfig.bottomPadding,
-            backgroundColor: "rgb(29,91,65)",
-            borderTopWidth: 0,
-            elevation: 8,
-            shadowColor: "#000",
-            shadowOffset: {
-              width: 0,
-              height: -2,
-            },
-            shadowOpacity: 0.1,
-            shadowRadius: 3,
-          },
-          tabBarItemStyle: {
-            paddingVertical: 4,
-            paddingBottom: Platform.OS === 'ios' && responsiveConfig.insets.bottom > 0 ? 0 : 4,
-          },
-        })}
-      >
+          shadowOpacity: 0.1,
+          shadowRadius: 3,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 4,
+          paddingBottom:
+            Platform.OS === "ios" && responsiveConfig.insets.bottom > 0 ? 0 : 4,
+        },
+      })}
+    >
+      <Tab.Screen
+        name={SCREENS.HOME}
+        component={HomeScreen}
+        options={{ tabBarLabel: "Home" }}
+      />
+      <Tab.Screen
+        name="ATTENDANCE"
+        component={isAdmin ? AdminHomeScreen : AttendanceSheet}
+        options={{ tabBarLabel: "Attendance" }}
+      />
+      <Tab.Screen
+        name="PAYSLIP"
+        component={PaymentSlip}
+        options={{ tabBarLabel: "Payslip" }}
+      />
+      <Tab.Screen
+        name={SCREENS.PROFILE}
+        component={ProfileScreen}
+        options={{ tabBarLabel: "Profile" }}
+      />
+    </Tab.Navigator>
+  );
+};
 
-        <Tab.Screen
-          name={SCREENS.HOME}
-          component={HomeScreen}
-          options={{
-            tabBarLabel: "Home",
-          }}
-        />
-        <Tab.Screen
-          name="ATTENDANCE"
-          component={isAdmin ? AdminHomeScreen : AttendanceSheet}
-          options={{
-            tabBarLabel: "Attendance",
-          }}
-        />
-        <Tab.Screen
-          name="PAYSLIP"
-          component={PaymentSlip}
-          options={{
-            tabBarLabel: "Payslip",
-          }}
-        />
-        <Tab.Screen
-          name={SCREENS.PROFILE}
-          component={ProfileScreen}
-          options={{
-            tabBarLabel: "Profile",
-          }}
-        />
-      </Tab.Navigator>
-    );
-  };
+const NavigationContent = () => {
+  const { isLoggedIn, isOnboarded, isLoading } = useAuth();
 
-  const getInitialRouteName = () => {
-    if (!isLoggedIn) {
-      return SCREENS.LOGIN;
-    }
-
-    if (!isOnboarded) {
-      return SCREENS.ONBOARDING;
-    }
-
-    return SCREENS.HOME;
-  };
+  useEffect(() => {
+    return () => {
+      isReadyRef.current = false;
+    };
+  }, []);
 
   if (isLoading) {
     return (
@@ -326,26 +267,35 @@ const NavigationContent = () => {
     );
   }
 
+  const logCurrentRoute = (label: string) => {
+    if (!__DEV__) return;
+    console.log(
+      `[Nav] ${label} → route:`,
+      navigationRef.current?.getCurrentRoute?.()?.name,
+    );
+  };
+
+  /**
+   * Screens conditional hain (onboarding / login / app), is liye initialRouteName
+   * nahi diya: React Navigation khud current branch ki pehli screen kholta hai.
+   */
   return (
     <NavigationContainer
       ref={navigationRef}
       onReady={() => {
         isReadyRef.current = true;
+        logCurrentRoute("ready");
       }}
-      theme={isDarkMode ? LightTheme : LightTheme}
+      onStateChange={() => logCurrentRoute("changed")}
+      theme={LightTheme}
     >
-      <Stack.Navigator
-        screenOptions={{ headerShown: false }}
-        initialRouteName={getInitialRouteName()}
-      >
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isOnboarded ? (
-          <>
-            <Stack.Screen
-              name={SCREENS.ONBOARDING}
-              component={OnboardingScreen}
-              options={horizontalAnimation}
-            />
-          </>
+          <Stack.Screen
+            name={SCREENS.ONBOARDING}
+            component={OnboardingScreen}
+            options={horizontalAnimation}
+          />
         ) : !isLoggedIn ? (
           <>
             <Stack.Screen
@@ -361,39 +311,51 @@ const NavigationContent = () => {
           </>
         ) : (
           <>
-            <Stack.Screen name={SCREENS.HOME} component={renderTabNavigation} />
+            <Stack.Screen name={SCREENS.HOME} component={MainTabs} />
             <Stack.Screen
               name={SCREENS.ADDTEAMMEMBER}
+              component={AddTeamMemberScreen}
               options={horizontalAnimation}
-            >
-              {(props) => <AddTeamMemberScreen {...props} />}
-            </Stack.Screen>
-            <Stack.Screen name={SCREENS.DETAIL} options={horizontalAnimation}>
-              {(props) => <DetailScreen {...props} />}
-            </Stack.Screen>
+            />
+            <Stack.Screen
+              name={SCREENS.DETAIL}
+              component={LeaveDetailScreen}
+              options={horizontalAnimation}
+            />
             <Stack.Screen
               name={SCREENS.TEAMMEMBERDETAIL}
+              component={TeamMemberDetailScreen}
               options={horizontalAnimation}
-            >
-              {(props) => <TeamMemberDetailScreen {...props} />}
-            </Stack.Screen>
+            />
             <Stack.Screen name="profile" component={ProfileEditFormScreen} />
             <Stack.Screen name="attendance" component={AttendanceSummaryScreen} />
-            <Stack.Screen name="attendanceclient" component={AdminAttendanceClientlist} />
-            <Stack.Screen name="adminclient" component={AdminAttendancesheetlist} />
-            <Stack.Screen name="refrencevideo" component={VideoPlayerFullScreen} />
+            <Stack.Screen
+              name="attendanceclient"
+              component={AdminAttendanceClientlist}
+            />
+            <Stack.Screen name="adminclient" component={AttendanceSummaryScreen} />
+            <Stack.Screen
+              name="refrencevideo"
+              component={VideoPlayerFullScreen}
+            />
             <Stack.Screen name="atlist" component={AttendanceSheet} />
-            <Stack.Screen name="adminsheetlist" component={AdminAttendanceSheet} />
+            <Stack.Screen
+              name="adminsheetlist"
+              component={AdminAttendanceSheet}
+            />
             <Stack.Screen name="terms" component={TermsAndConditions} />
             <Stack.Screen name="privacy" component={PrivacyandPolicy} />
             <Stack.Screen name="tasklist" component={Appss} />
             <Stack.Screen name="compoff" component={CompOffAccrualScreen} />
-
+            <Stack.Screen name="allotedteam" component={Allotedteam} />
             <Stack.Screen name="LEAVE" component={LeaveRecordsScreen} />
             <Stack.Screen name="LEAVEAPPROVAL" component={LeaveDetailScreen} />
             <Stack.Screen name="TeamMemberDetails" component={TeamScreen} />
             <Stack.Screen name="ALLOWANCE" component={EmployeeAllowanceForm} />
-            <Stack.Screen name="Rgularisation" component={AttendanceRegularizationScreen} />
+            <Stack.Screen
+              name="Rgularisation"
+              component={AttendanceRegularizationScreen}
+            />
             <Stack.Screen name="LEAVEREQUESTS" component={LeaveRequestsScreen} />
             <Stack.Screen name="empduration" component={Employeedurationlist} />
             <Stack.Screen name="maproute" component={MapWithRoute} />
@@ -401,172 +363,108 @@ const NavigationContent = () => {
             <Stack.Screen name="admin" component={AdminHomeScreen} />
             <Stack.Screen name="createtask" component={TaskCreator} />
             <Stack.Screen name="changepassword" component={ChangePassword} />
-            <Stack.Screen name={SCREENS.ADDTASK} options={horizontalAnimation}>
-              {(props) => <AddTaskScreen {...props} />}
-            </Stack.Screen>
+            <Stack.Screen
+              name={SCREENS.ADDTASK}
+              component={AddTaskScreen}
+              options={horizontalAnimation}
+            />
           </>
         )}
       </Stack.Navigator>
-
-      {/* Modal for quick actions */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => {
-          setModalVisible(!modalVisible);
-        }}
-      >
-        <SafeAreaView style={styles.modalSafeArea} edges={['bottom']}>
-          <View style={styles.centeredView}>
-            <View style={[styles.modalView, { marginBottom: responsiveConfig.insets.bottom + 10 }]}>
-              <TouchableOpacity
-                style={[styles.button, styles.buttonClose]}
-                onPress={() => {
-                  setModalVisible(!modalVisible);
-                  navigationRef.current?.navigate("tasklist");
-                }}
-              >
-                <Icon name="clipboard-check-outline" type="MaterialCommunityIcons" size={27} color="white" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.buttonClose]}
-                onPress={() => {
-                  setModalVisible(!modalVisible);
-                  navigationRef.current?.navigate("createtask");
-                }}
-              >
-                <Icon name="clipboard-list-outline" type="MaterialCommunityIcons" size={27} color="white" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.buttonClose]}
-                onPress={() => setModalVisible(!modalVisible)}
-              >
-                <View>
-                  <Icon
-                    name="close-outline"
-                    type={IconType.Ionicons}
-                    size={18}
-                    color="white"
-                    style={{ textAlign: 'center' }}
-                  />
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </SafeAreaView>
-      </Modal>
     </NavigationContainer>
   );
 };
 
-// Main Navigation component wrapped with SafeAreaProvider
-const Navigation = () => {
+/**
+ * Online/offline banner ka logic. Listener aur timer unmount par clean hote hain.
+ */
+const useConnectivityStatus = () => {
   const [isOnline, setIsOnline] = useState(true);
   const [showConnectivityStatus, setShowConnectivityStatus] = useState(false);
-  const connectivityTimerRef = useRef(null);
-  const prevConnectedRef = useRef(null);
+
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevConnectedRef = useRef<boolean | null>(null);
   const isInitializedRef = useRef(false);
 
-  const backPressCount = useRef(0);
-  const backPressTimer = useRef(null);
-
-  const handleConnectivityChange = (connected) => {
-    console.log(`[App.js] 📡 Connectivity changed → ${connected}`);
-
-    if (!isInitializedRef.current) {
-      console.log('[App.js] ⏳ Not initialized yet, ignoring event');
-      return;
-    }
-
-    const prev = prevConnectedRef.current;
-
-    // No change
-    if (prev === connected) {
-      console.log('[App.js] ↔️ No change in connectivity');
-      return;
-    }
-
-    // ─── WENT OFFLINE ──────────────────────────────────────────────────
-    if (connected === false) {
-      console.log('[App.js] 🔴 OFFLINE');
-      setIsOnline(false);
-      setShowConnectivityStatus(true);
-
-      // Clear any pending timer
-      if (connectivityTimerRef.current) {
-        clearTimeout(connectivityTimerRef.current);
-        connectivityTimerRef.current = null;
-      }
-    }
-    // ─── BACK ONLINE ──────────────────────────────────────────────────
-    else if (prev === false && connected === true) {
-      console.log('[App.js] 🟢 BACK ONLINE');
-      setIsOnline(true);
-      setShowConnectivityStatus(true);
-
-      // Clear any existing timer
-      if (connectivityTimerRef.current) {
-        clearTimeout(connectivityTimerRef.current);
-      }
-
-      // Auto-hide status banner after 3 seconds
-      connectivityTimerRef.current = setTimeout(() => {
-        console.log('[App.js] ⏱️ 3 second timer fired — hiding connectivity status');
-        setShowConnectivityStatus(false);
-        connectivityTimerRef.current = null;
-      }, 3000); // 3 seconds
-    }
-
-    prevConnectedRef.current = connected;
-    console.log(`[App.js] 📝 Updated prevConnected → ${connected}`);
-  };
   useEffect(() => {
+    let mounted = true;
+
+    const clearHideTimer = () => {
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+    };
+
+    const handleConnectivityChange = (connected: boolean) => {
+      if (!mounted || !isInitializedRef.current) return; // initial fetch se pehle ke events ignore
+
+      const prev = prevConnectedRef.current;
+      if (prev === connected) return; // koi change nahi
+
+      if (connected === false) {
+        console.log("[Net] 🔴 OFFLINE");
+        setIsOnline(false);
+        setShowConnectivityStatus(true);
+        clearHideTimer();
+      } else if (prev === false) {
+        console.log("[Net] 🟢 BACK ONLINE");
+        setIsOnline(true);
+        setShowConnectivityStatus(true);
+        clearHideTimer();
+        // 3 second baad banner hide
+        hideTimerRef.current = setTimeout(() => {
+          setShowConnectivityStatus(false);
+          hideTimerRef.current = null;
+        }, 3000);
+      }
+
+      prevConnectedRef.current = connected;
+    };
 
     NetInfo.fetch()
       .then((state) => {
+        if (!mounted) return;
         const connected = state.isConnected ?? true;
-        console.log(`[App.js] ✅ NetInfo.fetch() → isConnected=${connected} | type=${state.type}`);
+        console.log(`[Net] initial → isConnected=${connected} | type=${state.type}`);
 
         prevConnectedRef.current = connected;
         isInitializedRef.current = true;
 
-        // Show offline status immediately if app starts offline
-        if (!connected) {
-          console.log('[App.js] 🔴 App launched OFFLINE');
-          setIsOnline(false);
-          setShowConnectivityStatus(true);
-        } else {
-          console.log('[App.js] ✅ App launched ONLINE');
-          setIsOnline(true);
-          setShowConnectivityStatus(false);
-        }
+        // App offline start hui to turant banner dikhao
+        setIsOnline(connected);
+        setShowConnectivityStatus(!connected);
       })
       .catch((error) => {
-        console.error('[App.js] ❌ NetInfo.fetch() failed:', error);
+        console.log("[Net] NetInfo.fetch() failed:", error);
+        if (!mounted) return;
         prevConnectedRef.current = true;
         isInitializedRef.current = true;
         setIsOnline(true);
       });
 
-    // Listen for connectivity changes
     const unsubscribe = NetInfo.addEventListener((state) => {
-      const connected = state.isConnected ?? true;
-      console.log(`[App.js] 📻 NetInfo event → isConnected=${connected} | type=${state.type}`);
-      handleConnectivityChange(connected);
+      handleConnectivityChange(state.isConnected ?? true);
     });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+      clearHideTimer();
+    };
   }, []);
+
+  return { isOnline, showConnectivityStatus };
+};
+
+// Main Navigation component wrapped with SafeAreaProvider
+const Navigation = () => {
+  const { isOnline, showConnectivityStatus } = useConnectivityStatus();
+
   return (
     <SafeAreaProvider>
-
-      <NetworkStatusBar
-        isOnline={isOnline}
-        showStatus={showConnectivityStatus}
-      />
-
+      <NetworkStatusBar isOnline={isOnline} showStatus={showConnectivityStatus} />
       <NavigationContent />
-
-
     </SafeAreaProvider>
   );
 };
@@ -574,20 +472,20 @@ const Navigation = () => {
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fff",
   },
   iconContainer: {
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    height: '100%',
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    height: "100%",
   },
   isActive: {
     position: "absolute",
-    height: '75%',
+    height: "75%",
     // backgroundColor: 'rgba(203, 173, 106, 0.2)',
     marginLeft: "auto",
     marginRight: "auto",
@@ -607,62 +505,6 @@ const styles = StyleSheet.create({
     marginRight: "auto",
     top: -10,
     borderRadius: 2,
-  },
-  modalSafeArea: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  centeredView: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: 'flex-end',
-    paddingBottom: 10,
-  },
-  modalView: {
-    backgroundColor: "white",
-    borderRadius: 20,
-    width: ScreenWidth * 0.53,
-    height: ScreenWidth * 0.15,
-    alignItems: "center",
-    display: "flex",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 10,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  button: {
-    borderRadius: 20,
-    padding: 10,
-    elevation: 2,
-  },
-  buttonClose: {
-    backgroundColor: "rgb(29,91,65)",
-  },
-  textStyle: {
-    color: "white",
-    fontWeight: "bold",
-    textAlign: "center",
-  },
-  modalText: {
-    marginBottom: 15,
-    textAlign: "center",
-  },
-  shadow: {
-    shadowColor: "#7F5DF0",
-    shadowOffset: {
-      width: 0,
-      height: 10,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.5,
-    elevation: 5,
   },
 });
 

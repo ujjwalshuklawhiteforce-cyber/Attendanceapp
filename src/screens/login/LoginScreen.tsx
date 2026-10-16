@@ -102,72 +102,61 @@ const LoginScreen: React.FC = () => {
 
     return true;
   };
-  const handleSubmit = async () => {
-    if (!validateForm()) return;
+const handleSubmit = async () => {
+  if (!validateForm()) return;
 
-    setloading(true);
-    setIsLoading(true);
+  setloading(true);
+  setIsLoading(true);
 
-    try {
-      const data = { username: email, password };
-      const loginResult = await axios.post(
-        "https://whiteforcepayroll.com/admin/api/employee-login",
-        data,
-        { headers: { "Content-Type": "application/json" } }
-      );
+  try {
+    const data = { username: email, password };
+    const loginResult = await axios.post(
+      "https://whiteforcepayroll.com/admin/api/employee-login",
+      data,
+      { headers: { "Content-Type": "application/json" } }
+    );
+    
+    console.log("Login Result:", loginResult.data);
+    const userId = loginResult?.data?.data?.user_id;
+    setuserId(userId);
 
-      const userId = loginResult?.data?.data?.user_id;
-      setuserId(userId);
-
-      if (!userId) {
-        setErrorModalVisible(true);
-        setErrorMessage("Invalid email or password.");
-        return;
-      }
-
-      // ⭐ Fetch & Save Location Shift Data
-      const response = await fetch(
-        "https://whiteforcepayroll.com/admin/api/employee-location-shift-data",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: userId }),
-        }
-      );
-
-      const json = await response.json();
-      const locations = json?.data?.locations || [];
-      await AsyncStorage.setItem("employee_locations", JSON.stringify(locations));
-
-      // Check for face registered
-      const faceDetailsResult = await axios.post(
-        " https://whiteforcepayroll.com/admin/api/get-user-face-details",
-        { user_id: userId, is_embedded: true },
-        { headers: { "Content-Type": "application/json" } }
-      );
-      console.log("Face Details:", faceDetailsResult.data?.data);
-
-      if (faceDetailsResult.data?.data?.face_embedded_1) {
-        const embedding1 = faceDetailsResult.data?.data?.face_embedded_1;
-        const embedding2 = faceDetailsResult.data?.data?.face_embedded_2;
-        const embedding3 = faceDetailsResult.data?.data?.face_embedded_3;
-        await AsyncStorage.setItem("face_embedding_1", embedding1);
-        await AsyncStorage.setItem("face_embedding_2", embedding2);
-        await AsyncStorage.setItem("face_embedding_3", embedding3);
-        login(loginResult);
-
-
-      } else {
-
-        setModalVisible(true);
-      }
-    } catch (err) {
-      Alert.alert("Error", "Something went wrong, try again.");
+    if (!userId) {
+      setErrorModalVisible(true);
+      setErrorMessage("Invalid email or password.");
+      return;
     }
 
-    setloading(false);
-    setIsLoading(false);
-  };
+    // ✅ FIX: Remove space from URL
+    const faceDetailsResult = await axios.post(
+      "https://whiteforcepayroll.com/admin/api/get-user-face-details", // ✅ No space
+      { user_id: userId, is_embedded: true },
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    console.log("Face Details Response:", faceDetailsResult.data); // ✅ Add log
+
+    if (faceDetailsResult.data?.data?.face_embedded_1) {
+      const embedding1 = faceDetailsResult.data?.data?.face_embedded_1;
+      const embedding2 = faceDetailsResult.data?.data?.face_embedded_2;
+      const embedding3 = faceDetailsResult.data?.data?.face_embedded_3;
+      
+      console.log("Embeddings fetched successfully"); // ✅ Add log
+      
+      login(loginResult);
+    } else {
+      console.log("No face embedding found"); // ✅ Add log
+      setModalVisible(true);
+    }
+  } catch (err) {
+    console.error("handleSubmit Error:", err.message); // ✅ Better error log
+    console.error("Error Details:", err.response?.data); // ✅ API error details
+    
+    Alert.alert("Error", err.response?.data?.message || "Something went wrong, try again."); // ✅ Fix typo
+  }
+
+  setloading(false);
+  setIsLoading(false);
+};
 
   const handlePermission = async () => {
     // Request permissions every time the button is clicked
@@ -408,7 +397,7 @@ const LoginScreen: React.FC = () => {
   );
 
   return (
-    <View style={{ backgroundColor: "#1e3830" }}>
+    <View style={{ backgroundColor: "#1e3830", }}>
       {renderCamera()}
       {/* <ImageBackground style={{backgroundColor:"#518c79",  }} source={require("../../../assets/camera/loginbackground.png")}> */}
 

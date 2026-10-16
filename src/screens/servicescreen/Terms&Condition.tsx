@@ -461,7 +461,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 34,
+    paddingTop: 44,
     paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#EBEBEB',
@@ -475,6 +475,7 @@ const styles = StyleSheet.create({
   },
   title: {
     position: 'absolute',
+    bottom: 10,
     left: 0,
     right: 0,
     textAlign: 'center',

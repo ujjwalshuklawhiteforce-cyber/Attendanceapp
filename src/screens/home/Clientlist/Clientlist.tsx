@@ -9,8 +9,9 @@ import { StackActions, useTheme } from "@react-navigation/native";
 import Text from "@shared-components/text-wrapper/TextWrapper";
 import { ScreenHeight, ScreenWidth } from "@freakycoder/react-native-helpers";
 import * as NavigationService from "react-navigation-helpers";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import { normalizeText } from "@rneui/base";
+
 import { useAuth } from "context/AuthContext";
 import AdminAttendanceSheet from "@screens/attendancesheet/AdminAttendanceSheet";
 import CreateStyle from "@screens/addTask/Create.style";
@@ -19,6 +20,16 @@ const profileURI =
 
 const AdminAttendanceClientlist: React.FC = () => {
   const { userInfo, setdata } = useAuth();
+  const route = useRoute<any>();
+
+  // ── Dynamic params from Allotedteam ──────────────────────────────────────────
+  // Allotedteam passes: { clientId, userId, name, regcode, image }
+  const routeClientId: number | undefined = route.params?.clientId;
+  const routeUserId: number | undefined = route.params?.userId;
+  const routeEmployeeName: string | undefined = route.params?.name;
+  const routeEmployeeImage: string | undefined = route.params?.image;
+  // ─────────────────────────────────────────────────────────────────────────────
+
   const parseData = JSON.parse(userInfo ? userInfo : "{}");
   const fullname = parseData.data?.data?.name;
   const userid = parseData?.data?.user_id;
@@ -26,16 +37,23 @@ const AdminAttendanceClientlist: React.FC = () => {
   const name = parseData["data"]?.name;
 
   const data = JSON.parse(userInfo ? userInfo : "{}");
-
-  const user_id = parseData["data"]?.user_id ? parseData["data"]?.user_id : userid;
   const imagesource = data.data?.data?.image;
+
+  // Prefer dynamic route params; fall back to context values
+  const effective_user_id = routeUserId ?? (parseData["data"]?.user_id ? parseData["data"]?.user_id : userid);
+  const effective_client_id = routeClientId ?? client_id;
+
+  // Display name & image: use selected employee from Allotedteam if available
+  const displayName = routeEmployeeName || fullname || name || "Admin User";
+  const displayImage = routeEmployeeImage || imagesource || parseData["data"]?.image || profileURI;
+
   const theme = useTheme();
   const { colors } = theme;
 
   const navigation = useNavigation();
   const [teamData, setTeamData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [weekDays, setWeekDays] = useState<any>([]);
   const [selectedUser, setSelectedUser] = useState<{ name: string; user_id: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -51,9 +69,9 @@ const AdminAttendanceClientlist: React.FC = () => {
   };
 
   useEffect(() => {
+    console.log('[ClientList] Route params → userId:', routeUserId, '| clientId:', routeClientId);
+    console.log('[ClientList] Effective → userId:', effective_user_id, '| clientId:', effective_client_id);
     fetchClientData();
-    console.log('user', userid)
-    console.log("client", client_id)
     getWeekDays();
     scrollToActiveItem();
 
@@ -71,28 +89,30 @@ const AdminAttendanceClientlist: React.FC = () => {
   /** ---------------- Fetch Client List API ---------------- */
   const fetchClientData = async () => {
     try {
+      setError(null);
+      const requestBody = {
+        client_id: effective_client_id,
+        user_id: effective_user_id,
+      };
+      console.log('[ClientList] Fetching with params:', requestBody);
+
       const response = await fetch("https://whiteforcepayroll.com/admin/api/get-fms-client-list", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          client_id: client_id,
-          user_id_id: user_id,
-        }),
+        body: JSON.stringify(requestBody),
       });
-      console.log('body', JSON.stringify({
-        client_id: client_id,
-        user_id_id: user_id,
-      }))
+
       const contentType = response.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         const text = await response.text();
-        console.error('Error fetching client list: Server returned non-JSON response (HTTP ' + response.status + '):', text.substring(0, 200));
+        console.error('[ClientList] Non-JSON response (HTTP ' + response.status + '):', text.substring(0, 200));
         setError('Server error. Please try again later');
         return;
       }
 
       const json = await response.json();
-      console.log("response", json)
+      console.log('[ClientList] API response:', json);
+
       if (response.ok && json.status) {
         const clientList = Array.isArray(json.data)
           ? json.data
@@ -107,8 +127,7 @@ const AdminAttendanceClientlist: React.FC = () => {
           total: Number(client.total ?? 0),
           present: Number(client.present ?? 0),
           absent: Number(client.absent ?? 0),
-          image:
-            "https://cdn-icons-png.flaticon.com/512/3135/3135715.png", // default client icon
+          image: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
         }));
 
         setTeamData(formatted);
@@ -116,8 +135,8 @@ const AdminAttendanceClientlist: React.FC = () => {
       } else {
         throw new Error(json.message || "Something went wrong");
       }
-    } catch (err) {
-      setError(err.message);
+    } catch (err: any) {
+      setError(err?.message || "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -183,7 +202,7 @@ const AdminAttendanceClientlist: React.FC = () => {
             }),
           }}
           resizeMode="cover"
-          source={{ uri: imagesource ? imagesource : parseData["data"]?.image ? parseData["data"]?.image : profileURI }}
+          source={{ uri: displayImage }}
         />
         <Text
           color="white"
@@ -193,7 +212,7 @@ const AdminAttendanceClientlist: React.FC = () => {
             fontWeight: "800",
           }}
         >
-          {fullname || "Admin User"}
+          {displayName}
         </Text>
       </View>
     </View>
@@ -364,8 +383,18 @@ const AdminAttendanceClientlist: React.FC = () => {
                   Your Attendance
                 </Text>
               </View>
-              <View
-
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => {
+                  NavigationService.navigationRef.current?.dispatch(
+                    StackActions.push("atlist", {
+                      userId: effective_user_id,
+                      name: displayName,
+                      image: displayImage,
+                      clientId: effective_client_id,
+                    })
+                  );
+                }}
                 style={{
                   backgroundColor: "#F9FFFC",
                   flexDirection: "column",
@@ -397,7 +426,7 @@ const AdminAttendanceClientlist: React.FC = () => {
                         borderRadius: 50,
                         marginRight: 8,
                       }}
-                      source={{ uri: imagesource ? imagesource : parseData["data"]?.image ? parseData["data"]?.image : profileURI }}
+                      source={{ uri: displayImage }}
                     />
                     <View>
                       <Text
@@ -408,15 +437,19 @@ const AdminAttendanceClientlist: React.FC = () => {
                           fontSize: 14,
                         }}
                       >
-                        {name ? name : fullname}
+                        {displayName}
                       </Text>
                     </View>
                   </View>
                   <TouchableOpacity
-                    onPressIn={() => {
-
+                    onPress={() => {
                       NavigationService.navigationRef.current?.dispatch(
-                        StackActions.push("atlist")
+                        StackActions.push("atlist", {
+                          userId: effective_user_id,
+                          name: displayName,
+                          image: displayImage,
+                          clientId: effective_client_id,
+                        })
                       );
                     }}
                     style={{
@@ -431,7 +464,7 @@ const AdminAttendanceClientlist: React.FC = () => {
                     />
                   </TouchableOpacity>
                 </View>
-              </View>
+              </TouchableOpacity>
               <View
                 style={{
                   display: "flex",

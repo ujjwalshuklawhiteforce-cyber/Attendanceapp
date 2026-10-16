@@ -33,10 +33,11 @@ export const checkForceUpdate = async () => {
     const data = await response.json();
     console.log("Version API response:", data);
 
-    const MIN_VERSION = `${data?.data}`; // ✅ FIX HERE
-        // const MIN_VERSION = `1.5.7`; // ✅ FIX HERE
+    // const MIN_VERSION = `${data?.data}`; // ✅ FIX HERE
+        const MIN_VERSION = `0.0.0`; // ✅ FIX HERE
 
 console.log("wdd", MIN_VERSION)
+console.log("Current Version:", currentVersion);
     if (!MIN_VERSION) {
       console.warn("App version missing in API");
       return false;

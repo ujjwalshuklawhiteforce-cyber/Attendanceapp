@@ -853,7 +853,8 @@
 
 //   export default AttendanceSheet;
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, Modal, TouchableHighlight, Image, ImageBackground, StyleProp, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Modal, TouchableHighlight, Image, ImageBackground, StyleProp, Alert, ScrollView, Platform } from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAuth } from "context/AuthContext";
 import Svg, { LinearGradient, Stop, Rect } from 'react-native-svg';
 import LottieView from 'lottie-react-native';
@@ -892,6 +893,15 @@ interface AttendanceItem {
 }
 
 const AttendanceSheet: React.FC = () => {
+  const navigation = useNavigation();
+  const route = useRoute<any>();
+
+  // Dynamic route params passed from Clientlist or other screens
+  const routeUserId = route.params?.userId ?? route.params?.user_id ?? route.params?.isActive;
+  const routeName = route.params?.name;
+  const routeImage = route.params?.image;
+  const routeDesignation = route.params?.designation;
+
   const [attendanceData, setAttendanceData] = useState<AttendanceItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [shiftdata, setshiftdata] = useState<ShiftAttendanceItem[]>([]);
@@ -902,11 +912,22 @@ const AttendanceSheet: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>('');
   
   const { userInfo } = useAuth();
-  const parseData = JSON.parse(userInfo ? userInfo : {});
-  const fullname = parseData.data?.data?.name;
-  const user_ids = parseData["data"].user_id;
+  let parseData: any = {};
+  try {
+    parseData = typeof userInfo === "string" ? JSON.parse(userInfo || "{}") : (userInfo || {});
+  } catch (err) {
+    parseData = {};
+  }
+  const fullname = parseData.data?.data?.name || parseData?.data?.name;
+  const user_ids = parseData?.["data"]?.user_id;
   const userid = parseData?.data?.data?.user_id;
-  const designation = parseData.data?.data?.designation;
+  const designation = parseData?.data?.data?.designation || parseData?.["data"]?.designation;
+
+  // Prefer dynamic route params; fall back to context values
+  const effectiveUserId = routeUserId ? `${routeUserId}` : `${user_ids ? user_ids : (userid || "")}`;
+  const effectiveDisplayName = routeName || fullname || parseData?.["data"]?.name || "Your Attendance";
+  const effectiveDesignation = routeDesignation || designation || "Attendance";
+  const effectiveImage = routeImage || parseData?.data?.data?.image || parseData?.["data"]?.image;
   
   const currentDate = new Date();
   const previousMonth = currentDate.getMonth();
@@ -956,8 +977,8 @@ const AttendanceSheet: React.FC = () => {
   useEffect(() => {
     fetchAttendanceData();
     getCheckInOutData()
-    console.log("r", userid)
-  }, [user_ids]);
+    console.log("attendance user id:", effectiveUserId)
+  }, [effectiveUserId]);
 
   const fetchAttendanceData = async () => {
     fetchshitattendanceData()
@@ -969,7 +990,7 @@ const AttendanceSheet: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          user_id: `${user_ids ? user_ids : userid}`,
+          user_id: `${effectiveUserId}`,
           month: selectedMonth,
           year: selectedYear,
         }),
@@ -1016,7 +1037,7 @@ const AttendanceSheet: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          user_id: `${user_ids ? user_ids : userid}`,
+          user_id: `${effectiveUserId}`,
           month: selectedMonth,
           year: selectedYear,
         }),
@@ -1159,6 +1180,31 @@ const AttendanceSheet: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      {/* ---------------- Back Arrow Button ---------------- */}
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => navigation.goBack()}
+        style={{
+          position: 'absolute',
+          top: Platform.OS === 'ios' ? 50 : 25,
+          left: 16,
+          zIndex: 999,
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: 'rgba(255, 255, 255, 0.22)',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Icon
+          name="arrow-back"
+          type="Ionicons"
+          size={24}
+          color="white"
+        />
+      </TouchableOpacity>
+
       <Svg height="100%" width="100%" style={{ position: 'absolute', top: 0, left: 0, display:"flex", justifyContent:"center", alignItems:"center"}}>
         <LinearGradient id="gradient1" x1="40%" y1="0%" x2="40%" y2="70%">
           <Stop offset="0%" stopColor="#0C322D" stopOpacity="1" />
@@ -1171,13 +1217,13 @@ const AttendanceSheet: React.FC = () => {
               <View>
                 <View style={{ width:ScreenWidth*1, justifyContent:"center", display:"flex", flexDirection:"row"}}>
                   <Text style={{color:"white", fontSize:22, textTransform:"capitalize", fontWeight:"600"}}>
-                    {fullname ? fullname : parseData["data"].name}
+                    {effectiveDisplayName}
                   </Text>
                 </View>
                 <View style={{flexDirection:"row", margin:10, display:"flex", alignItems:"center", justifyContent:"center", gap:8}}>
                   <Image resizeMode="contain" style={{width:15, height:15}} source={require("../../assets/../assets/images/camera/verified.png")} />
                   <Text style={{color:"white", fontSize:15, textTransform:"capitalize", fontWeight:"600"}}>
-                    {parseData["data"].designation ? parseData["data"].designation : designation ? designation : "your Atendance"}
+                    {effectiveDesignation}
                   </Text>
                 </View>
               </View>
@@ -1480,7 +1526,7 @@ const AttendanceSheet: React.FC = () => {
                 </TouchableOpacity>
               </View>
               <UserWiseTrackingWebView 
-                userId={user_ids ? user_ids : userid} 
+                userId={effectiveUserId} 
                 date={selectedDate} 
               />
             </View>

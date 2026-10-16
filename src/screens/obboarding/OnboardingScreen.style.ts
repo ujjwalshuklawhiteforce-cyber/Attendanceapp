@@ -35,7 +35,7 @@ export default (theme: ExtendedTheme) => {
     content: {
       position: "absolute",
       width: ScreenWidth,
-      height: ScreenHeight * 0.35,
+      height: ScreenHeight * 0.31,
       backgroundColor: colors.white,
       zIndex: 9,
       bottom: 0,

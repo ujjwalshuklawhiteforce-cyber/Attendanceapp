@@ -1,202 +1,242 @@
-<img alt="React Native Typescript Boilerplate" src="assets/logo.png" width="1050"/>
-
-[![A lot of fundamental features with Typescript support React Native Boilerplate](https://img.shields.io/badge/-A%20lot%20of%20fundamental%20features%20with%20Typescript%20support%20React%20Native%20Boilerplate-orange?style=for-the-badge)](https://github.com/WrathChaos/react-native-typescript-boilerplate)
-
-[![npm version](https://img.shields.io/npm/v/react-native-typescript-boilerplate.svg?style=for-the-badge)](https://www.npmjs.com/package/@freakycoder/react-native-typescript-boilerplate)
-[![npm](https://img.shields.io/npm/dt/react-native-typescript-boilerplate.svg?style=for-the-badge)](https://www.npmjs.com/package/@freakycoder/react-native-typescript-boilerplate)
-![Platform - Android and iOS](https://img.shields.io/badge/platform-Android%20%7C%20iOS-blue.svg?style=for-the-badge)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
-[![styled with prettier](https://img.shields.io/badge/styled_with-prettier-ff69b4.svg?style=for-the-badge)](https://github.com/prettier/prettier)
+# 📱 White Force Attendance App
 
 <p align="center">
-  <img alt="React Native Typescript Boilerplate"
-        src="assets/react-native-typescript-boilerplate.gif" height="650" width="325" />
+  <img src="assets/camera/loginbackground.png" alt="White Force Attendance" width="220" style="border-radius: 16px;" />
 </p>
 
-# 🥳 Version 4.0.0 is here 😍
+<p align="center">
+  <b>Enterprise-Grade AI Face Recognition & Geo-Location Mobile Attendance System</b>
+</p>
 
-We're proudly announce that `Version 4.0.0` is here!
+<p align="center">
+  <img src="https://img.shields.io/badge/React%20Native-0.73.3-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React Native" />
+  <img src="https://img.shields.io/badge/TypeScript-5.0.4-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Android-Kotlin-7F52FF?style=for-the-badge&logo=android&logoColor=white" alt="Android" />
+  <img src="https://img.shields.io/badge/iOS-Swift-F05138?style=for-the-badge&logo=swift&logoColor=white" alt="iOS" />
+  <img src="https://img.shields.io/badge/ML%20Kit-Face%20Detection-FBBC04?style=for-the-badge&logo=google&logoColor=black" alt="MLKit" />
+  <img src="https://img.shields.io/badge/TensorFlow%20Lite-FaceNet%20%26%20Anti--Spoof-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white" alt="TensorFlow Lite" />
+</p>
 
-- Better **built-in theming** support with React Navigation
-- Native Splash Screen
-- New React Native Architecture Ready **(RN 0.73+)** 🍻
-- Awesome Theme Support for both Light / Dark Mode 🌙
-- Latest `React` and `React Native` Dependencies 🌟
-- All Dependencies are **Upgraded**
-- New GIF with the Project Example for Theming
-- Much Better Documentation
-- Detailed Roadmap
+---
 
-# 🐶 What's Included?
+## 📌 Overview
 
-- **Typescript**
-- **Flipper Ready**
-- **Navigation System**
-  - [React Navigation 6](https://reactnavigation.org/blog/2021/08/14/react-navigation-6.0/)
-  - [React Navigation Helpers](https://github.com/WrathChaos/react-navigation-helpers)
-  - Ready to use Stack and Tab Screens with navigation
-- **NEW: Built-in Theme System with Hooks**
-  - ☀️ Light Theme Support
-  - 🌙 Dark Theme Support
-  - Dynamic Color Palette System
-  - Custom Font Support
-  - Built-in Better `Text` Component
-- **Ready to use [React Native Reanimated 2](https://docs.swmansion.com/react-native-reanimated/) Integration**
-- **Native Splash Screen Integration**
-  - [React Native Splash Screen](https://github.com/crazycodeboy/react-native-splash-screen)
-- **Awesome [React Native Helpers](https://github.com/WrathChaos/react-native-helpers) Integration**
-  - Noth Detection Support
-  - Better Dimension Helper (Ex: ScreenWidth, ScreenHeight)
-  - Cool Text Helpers
-- **React Native Vector Icons**
-  - [React Native Vector Icons](https://github.com/oblador/react-native-vector-icons)
-  - [React Native Dynamic Vector Icons](https://github.com/WrathChaos/react-native-dynamic-vector-icons)
-- **[Localization](https://github.com/stefalda/ReactNativeLocalization) (Multi-Language Support)**
-- **HTTP Network Management**
-  - [Axios](https://github.com/axios/axios)
-  - [Axios Hooks](https://github.com/simoneb/axios-hooks)
-  - API Service with Usage Examples
-- **Built-in EventEmitter**
-  - [EventBus](https://github.com/browserify/events#readme)
-- **Babel Plugin Module Resolver**
-  - Fixing the relative path problem
-  - Visit `.babelrc` to ready to use and more customization
-- **Pre-commit Husky Integration**
-  - Ready to command husky setup with `npm run husky:setup`
-  - `commitlint` Integration for better commit linter
-  - Auto prettier on pre-commit
-  - Awesome ESLint Integration
-- **Built-in Custom Font Implementation**
-  - All you need to do is copy-paste the .tff files into `assets/fonts` folder
-  - Run `npx react-native-asset` command
+**White Force Attendance** is a cross-platform mobile attendance and workforce management application built for field employees, office staff, and clients. It integrates **on-device artificial intelligence** for face verification and live anti-spoofing alongside **high-precision GPS tracking** to ensure transparent, accurate, and tamper-proof punch-in/out records.
 
-- **More and more! :)**
+---
 
-# 🚀 Getting Started
+## ✨ Key Features
 
-## Quick Start
+### 👤 AI Face Recognition & Anti-Spoofing
+- **Real-Time Face Detection**: Powered by Google ML Kit Face Detection.
+- **On-Device Face Embeddings**: FaceNet (`facenet.tflite`) running natively via high-performance Kotlin and Swift bridge modules.
+- **Liveness & Anti-Spoofing Protection**: `MiniFASNetV2` & `MiniFASNetV1SE` models detect printed photos, digital screens, and 3D mask spoofing attempts.
+- **Cosine Similarity Matching**: Instant 1:1 face verification matching punch selfies against verified user profiles.
 
-To create a new project using the barebone boilerplate:
+### 📍 Geo-Fencing & Live Location Tracking
+- **High-Accuracy GPS Punching**: Validates employee latitude, longitude, and accuracy at punch time.
+- **Background Location Service**: Native Android foreground service (`LocationService.kt`) with boot recovery (`BootReceiver.kt`) to log field travel and visit locations.
+- **Interactive Map View**: Visual journey tracking and client site radius visualization using Google Maps.
 
-```sh
-git clone https://github.com/WrathChaos/react-native-typescript-boilerplate.git my-app-name
+### 👥 Alloted Team & Client Management
+- **Unified Team Dashboard**: Overview of allotted team members, live present/absent stats, and punch timestamps.
+- **Smart Role-Based Navigation**:
+  - Employee cards seamlessly navigate to dedicated **Attendance Sheets**.
+  - Client accounts route to **Client Attendance Lists**.
+- **Live Search & Filters**: Search staff and field sites by name or employee registration code (`user_regcode`).
+
+### 📅 Attendance Records & Regularization
+- **Admin Attendance Sheet**: Comprehensive monthly view with attendance status indicators (Present, Absent, Half-Day, Shift logs).
+- **Multi-Shift Support**: Real-time calculation for single-shift, multi-shift, and night duties.
+- **Regularization & Comp-Off**: Raise and track correction requests for missed punches or off-day duties.
+
+### 💼 Employee Self-Service
+- **Leave Management**: Apply for leaves, view quota balances, and track manager approval status.
+- **Payslip Viewer**: Inspect monthly salary breakdown and payment slips securely.
+- **Task Management**: Create, view, and update field tasks and status reports.
+
+---
+
+## 🛠️ Tech Stack
+
+| Domain | Technology / Library |
+|---|---|
+| **Core Framework** | React Native `0.73.3`, React `18.2.0` |
+| **Language** | TypeScript `5.0.4`, JavaScript (ESNext) |
+| **Android Native Bridge** | Kotlin, Android SDK 34, Android Foreground Services |
+| **iOS Native Bridge** | Swift, Objective-C++, CocoaPods |
+| **AI / Machine Learning** | TensorFlow Lite (`.tflite`), Google ML Kit Face Detection |
+| **Camera & Vision** | `react-native-vision-camera`, `react-native-image-crop-picker` |
+| **Navigation** | `@react-navigation/native` v6 (Stack & Bottom Tabs) |
+| **Maps & Geo** | `react-native-maps`, `react-native-get-location`, `geolib` |
+| **State & Storage** | React Context API, `@react-native-async-storage/async-storage` |
+| **Networking** | `axios`, `axios-hooks` |
+
+---
+
+## 📂 Project Structure
+
+```text
+Attendance/
+├── android/                   # Native Android project (Gradle, Kotlin modules, services)
+│   ├── app/src/main/
+│   │   ├── java/.../          # Native modules (FaceNetModule, LocationService, BootReceiver)
+│   │   └── res/               # Android drawables, layouts, icons
+├── ios/                       # Native iOS project (Xcode workspace, Podfile, Swift modules)
+│   ├── rntypescriptBoilerplate/
+│   │   ├── FaceNetModule.swift
+│   │   ├── FaceDetector.swift
+│   │   └── Models/            # TFLite models for iOS
+├── assets/                    # Static image assets, Lottie animations, and brand logos
+├── src/
+│   ├── Base64/                # Base64 image converters
+│   ├── FaceEmbading/          # Cosine similarity and embedding utilities
+│   ├── Facematching/          # Camera overlay, oval crop, and face match UI
+│   ├── navigation/            # App stack, bottom tabs, and routing
+│   ├── screens/
+│   │   ├── attendancesheet/   # Admin and user attendance sheets, tracking maps
+│   │   ├── home/              # Admin dashboard, Allotedteam, Clientlist
+│   │   ├── leaves/            # Leave application and approvals
+│   │   ├── login/             # Authentication & Forgot password
+│   │   ├── payementslip/      # Payslips and camera auto-capture
+│   │   ├── profile/           # User profile and account editing
+│   │   └── task/              # Task manager and task list
+│   ├── services/              # Event emitters, permission helpers, network monitor
+│   └── shared/                # Reusable UI components, text wrappers, buttons
+├── .env.example               # Template environment configuration
+├── .gitignore                 # Production-grade gitignore (excludes keys & secrets)
+├── package.json               # Dependencies and build scripts
+└── tsconfig.json              # TypeScript compiler configuration
 ```
 
-# 🎯 Step By Step Guide
+---
 
-## Clean-Up & Simple Run
+## 🚀 Getting Started
 
-Clean up the files from the example repository and do not forget to install the dependencies
-There is a good example by default on `HomeScreen`. You can delete the all screens.
+### Prerequisites
 
-- `npm i`
-- `npm run clean-up`
-- `npm i && npx pod-install`
-- `react-native run-ios/android`
+Ensure you have installed the following tools:
+- **Node.js**: `v18.0.0` or higher (LTS recommended)
+- **Yarn** or **npm**
+- **JDK**: Java Development Kit 17 (recommended for RN 0.73+)
+- **Android Studio**: Android SDK (Platform 34), Build-Tools, and Emulator
+- **Xcode** (macOS only): Xcode 15+ with Command Line Tools and iOS Simulator
+- **CocoaPods**: `sudo gem install cocoapods`
 
-**OR**
+---
 
-- `rm -rf .git README.md`
-- `rm -rf ./assets`
-- `npm i`
-- `npm run husky:setup`
-- `npx pod-install` (iOS Only)
-- `react-native run-ios/android`
+### Installation
 
-## Husky Integration
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/ujjwalshuklawhiteforce-cyber/Attendanceapp.git
+   cd Attendanceapp/Attendance
+   ```
 
-Before doing anything else, please simply run the command to initalize the husky. If you do not run clean-up part you should run the husky setup by yourself
+2. **Install JavaScript dependencies:**
+   ```bash
+   npm install
+   # or
+   yarn install
+   ```
 
-```jsx
-npm run husky:setup
+3. **Configure Environment Variables:**
+   Copy the example environment file and set your custom values:
+   ```bash
+   cp .env.example .env
+   ```
+
+4. **Install iOS Pods (macOS only):**
+   ```bash
+   cd ios
+   pod install
+   cd ..
+   ```
+
+5. **Android Local Configuration:**
+   Create `android/local.properties` (this file is git-ignored) and point it to your local Android SDK:
+   ```properties
+   # macOS example:
+   sdk.dir=/Users/YOUR_USERNAME/Library/Android/sdk
+
+   # Windows example:
+   # sdk.dir=C:\\Users\\YOUR_USERNAME\\AppData\\Local\\Android\\Sdk
+   ```
+
+---
+
+### Running the App
+
+#### Start Metro Bundler:
+```bash
+npm start
+# or with clean cache
+npm run start
 ```
 
-`husky:setup` will handle the initialization, installation and ready to use `commitlint`, `prettier` and `eslint`.
-
-## Rename the project: (Thanks to [react-native-name](https://github.com/junedomingo/react-native-rename))
-
-```sh
-npx react-native-rename <your-project-name>
+#### Run on Android:
+```bash
+npm run android
 ```
 
-> With custom Bundle Identifier (Android only. For iOS, please use Xcode)
-
-```sj
-npx react-native-rename <your-project-name> -b <bundleIdentifier>
+#### Run on iOS:
+```bash
+npm run ios
 ```
 
-### Install Pods (iOS Only)
+---
 
-- `npm i`
-- `cd ios && pod install`
-- `cd .. && react-native run-ios/android`
+## 🔒 Security & Keystores (Important for Git)
 
-### Android local.properties (Android Only)
+To maintain strict security and protect production systems, the following files are **strictly ignored** in `.gitignore` and **must never be committed to Git**:
 
-- `npm i`
-- `cd android && mkdir local.properties`
-- `nano local.properties`
+- `*.keystore` and `*.jks` (Android release and upload keys)
+- `android/local.properties` and `key.properties` (Private local SDK paths and keystore passwords)
+- `.env` and `*.env` (Environment variables and secret keys)
+- `google-services.json` and `GoogleService-Info.plist` (Firebase and cloud config credentials)
+- `build/`, `android/app/build/`, and `ios/DerivedData/` (Generated binaries and caches)
 
-#### Example of MacOS Android SDK Path
+> 💡 **For Production Builds:** Place your signing keystore (`my-upload-key.keystore`) directly inside `android/app/` on your secure build machine and supply credentials via environment variables or a local `key.properties`.
 
-Make sure that set your right path of Android **SDK**
+---
 
-##### MacOS / Linux
+## 📦 Building for Production
 
-Replace your machine name instead of `username`
+### Android
 
-```
-sdk.dir=/Users/username/Library/Android/sdk
-```
+1. **Clean Android Build:**
+   ```bash
+   npm run clean:android
+   ```
 
-##### Windows
+2. **Generate Release APK:**
+   ```bash
+   npm run release:android
+   ```
+   *Output file will be located at: `android/app/build/outputs/apk/release/app-release.apk`*
 
-Replace your machine name instead of `username`
+3. **Generate Android App Bundle (AAB for Google Play Store):**
+   ```bash
+   npm run release:play
+   ```
+   *Output file will be located at: `android/app/build/outputs/bundle/release/app-release.aab`*
 
-```
-sdk.dir=/Users/username/Library/Android/sdk
-```
+---
 
-- `cd .. & react-native run-ios/android`
+## 🔧 Useful Scripts
 
-# 📃 Documentations
+| Command | Action |
+|---|---|
+| `npm start` | Starts Metro bundler with cache reset |
+| `npm run android` | Builds and launches app on connected Android device/emulator |
+| `npm run ios` | Builds and launches app on iOS simulator |
+| `npm run clean:android` | Cleans Android Gradle cache and build folders |
+| `npm run lint` | Runs ESLint over `.js`, `.ts`, and `.tsx` files |
+| `npm run prettier` | Formats codebase according to Prettier rules |
 
-- [Components](./docs/components.md)
-- [Axios Hooks](./docs/axios-hooks.md)
-- [Event Emitter Usage](./docs/event-emitter.md)
-- [Project Structure](./docs/project-structure.md)
+---
 
-# 🔮 Roadmap
+## 📄 License
 
-- [x] ~~LICENSE~~
-- [x] ~~Better Husky: Linter, Prettier and Commintlint~~
-- [x] ~~Removal of `react-native-animated-splash-screen`~~
-- [x] ~~New Theme Support with React Navigation~~
-- [x] ~~Implement the native splash screen with [react-native-splash-screen](https://github.com/crazycodeboy/react-native-splash-screen)~~
-- [x] ~~Better and separated documentation~~
-- [x] ~~Axios Hooks~~
-- [x] ~~React Native New Architecture~~
-- [ ] `Babel Plugin Module Resolver` Documentation with Example
-- [ ] `Navigation Service` Documentation with Example
-- [ ] `Localization` Documentation with Example
-- [ ] `Theme` Documentation with Example
-- [ ] `FAQ` Documentation
-- [ ] `Website` for the boilerplate
-- [ ] Splash Screen Documentation
-- [ ] `Detox E2E` Integration Fork Version
-- [ ] Write an article about the lib on `Medium`
-- [ ] Write an article about the lib on `DevTo`
-
-## Credits
-
-<span>Photo by <a href="https://unsplash.com/@sotti?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Shifaaz shamoon</a> on <a href="https://unsplash.com/?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Unsplash</a></span>
-
-<span>Photo by <a href="https://unsplash.com/@jamie452?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Jamie Street</a> on <a href="https://unsplash.com/s/photos/profile-picture?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Unsplash</a></span>
-
-## Author
-
-FreakyCoder, kurayogun@gmail.com
-
-## License
-
-React Native Typescript Boilerplate is available under the MIT license. See the LICENSE file for more info.
+This repository is maintained for **White Force**. All rights reserved.
+Unauthorized copying, modification, or distribution is strictly prohibited.

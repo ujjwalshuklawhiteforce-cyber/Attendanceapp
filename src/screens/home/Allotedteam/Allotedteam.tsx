@@ -1,0 +1,724 @@
+import React, { useEffect, useRef, useState } from "react";
+import { BackHandler, Image, ImageBackground, ScrollView, View, Platform, TextInput, ActivityIndicator, Modal } from "react-native";
+import Icon, { IconType } from "react-native-dynamic-vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { TouchableOpacity } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { StackActions, useTheme } from "@react-navigation/native";
+import Text from "@shared-components/text-wrapper/TextWrapper";
+import { ScreenHeight, ScreenWidth } from "@freakycoder/react-native-helpers";
+import * as NavigationService from "react-navigation-helpers";
+import { useNavigation } from "@react-navigation/native";
+import { normalizeText } from "@rneui/base";
+import { useAuth } from "context/AuthContext";
+import AdminAttendanceSheet from "@screens/attendancesheet/AdminAttendanceSheet";
+
+const profileURI =
+  "https://images.unsplash.com/photo-1560250097-0b93528c311a?q=80&w=1374&auto=format&fit=crop";
+const defaultAvatar = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png";
+
+/** "2026-10-13 10:14:56 AM" -> "10:14 AM" */
+const formatPunchTime = (value?: string | null) => {
+  if (!value) return "--";
+  const parts = value.trim().split(" "); // [date, time, meridiem]
+  if (parts.length < 2) return value;
+  const time = parts[1].split(":").slice(0, 2).join(":");
+  return `${time}${parts[2] ? " " + parts[2] : ""}`;
+};
+
+const Allotedteam: React.FC = () => {
+  const { userInfo, setdata } = useAuth();
+  const parseData = JSON.parse(userInfo ? userInfo : "{}");
+  const fullname = parseData.data?.data?.name;
+  const userid = parseData?.data?.data?.user_id;
+  const own_client_id = parseData?.data?.data?.client_id;
+  const name = parseData["data"]?.name;
+
+  const data = JSON.parse(userInfo ? userInfo : "{}");
+  const imagesource = data.data?.data?.image;
+  const theme = useTheme();
+  const { colors } = theme;
+
+  const navigation = useNavigation();
+  const [teamData, setTeamData] = useState<any[]>([]);
+  const [summary, setSummary] = useState({ total: 0, present: 0, absent: 0 });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<{ name: string; user_id: number } | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [navigating, setNavigating] = useState(false);
+
+  const borderColors = ["#F38F0C", "#16BC77", "#0F58B9", "#D91172", "#2A2C3A"];
+
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    fetchTeamData();
+
+    const onBackPress = () => {
+      navigation.goBack();
+      return true;
+    };
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => backHandler.remove();
+  }, [navigation]);
+
+  /** ---------------- Fetch Allotment List API ---------------- */
+  const fetchTeamData = async () => {
+    try {
+      setError(null);
+      const response = await fetch("https://whiteforcepayroll.com/admin/api/user-allotment-list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: userid,
+        }),
+      });
+
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error(
+          "Error fetching allotment list: Server returned non-JSON response (HTTP " +
+          response.status +
+          "):",
+          text.substring(0, 200)
+        );
+        setError("Server error. Please try again later");
+        return;
+      }
+
+      const json = await response.json();
+      console.log("alloted team", json);
+      if (response.ok && json.status) {
+        const list = Array.isArray(json.data)
+          ? json.data
+          : Array.isArray(json.data?.employees)
+            ? json.data.employees
+            : [];
+
+        const formatted = list.map((emp: any) => ({
+          id: emp.id,
+          user_regcode: emp.user_regcode || "",
+          client_id: emp.client_id,
+          name: emp.name || "",
+          designation: emp.designation || "",
+          status: (emp.status || "").toLowerCase(),
+          punch_in: emp.punch_in || null,
+          punch_out: emp.punch_out || null,
+          image: emp.image ? emp.image : defaultAvatar,
+        }));
+
+        const presentCount = Number(json.present_count ?? formatted.filter((e: any) => e.status === "present").length);
+        const absentCount = Number(json.absent_count ?? formatted.filter((e: any) => e.status !== "present").length);
+
+        setSummary({
+          total: Number(json.total ?? formatted.length),
+          present: presentCount,
+          absent: absentCount,
+        });
+        setTeamData(formatted);
+        await AsyncStorage.setItem("myDataKey", JSON.stringify(formatted));
+      } else {
+        throw new Error(json.message || "Something went wrong");
+      }
+    } catch (err: any) {
+      setError(err?.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredData = searchQuery
+    ? teamData.filter((member: any) =>
+      (member.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (member.user_regcode || "").toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    : teamData;
+
+  /** ---------------- Render Header ---------------- */
+  const renderHeader = () => (
+    <View
+      style={{
+        width: ScreenWidth * 1,
+        height: ScreenHeight * 0.1,
+        flexDirection: "row",
+        justifyContent: "center",
+        alignContent: "center",
+      }}
+    >
+      <View style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+        <Image
+          style={{
+            height: 90,
+            width: 90,
+            borderColor: "white",
+            borderWidth: 1,
+            marginTop: 0,
+            marginBottom: 10,
+            borderRadius: 100,
+            ...Platform.select({
+              android: {
+                elevation: 100,
+                shadowColor: "white",
+              },
+            }),
+          }}
+          resizeMode="cover"
+          source={{ uri: imagesource ? imagesource : parseData["data"]?.image ? parseData["data"]?.image : profileURI }}
+        />
+        <Text
+          color="white"
+          style={{
+            fontSize: normalizeText(20),
+            textTransform: "capitalize",
+            fontWeight: "800",
+          }}
+        >
+          {fullname || "Admin User"}
+        </Text>
+      </View>
+    </View>
+  );
+
+  /** Navigate to client screen with brief loader */
+  const handleMemberPress = (member: any) => {
+    setNavigating(true);
+    setdata(member.client_id);
+    setTimeout(() => {
+      setNavigating(false);
+      NavigationService.navigationRef.current?.dispatch(StackActions.push("attendanceclient", {
+        clientId: member.client_id, userId: member.id, name: member.name, regcode: member.user_regcode
+      }));
+    }, 400);
+  };
+  return (
+    <>
+      {/* ---------------- Navigation Loader Overlay ---------------- */}
+      <Modal transparent visible={navigating} animationType="fade">
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(30,56,48,0.55)",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: "white",
+              borderRadius: 16,
+              padding: 30,
+              alignItems: "center",
+              gap: 14,
+              elevation: 10,
+            }}
+          >
+            <ActivityIndicator size="large" color="#1e3830" />
+            <Text color="#1e3830" style={{ fontSize: 14, fontWeight: "600" }}>
+              Loading...
+            </Text>
+          </View>
+        </View>
+      </Modal>
+
+      {isOpen ? (
+        <View>
+          <AdminAttendanceSheet isActive={selectedUser?.user_id} name={selectedUser?.name} />
+        </View>
+      ) : null}
+
+      <SafeAreaView style={{ flex: 1, backgroundColor: "white" }}>
+        {/* ---------------- Back Arrow Button ---------------- */}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => navigation.goBack()}
+          style={{
+            position: "absolute",
+            top: Platform.OS === "ios" ? 50 : 20,
+            left: 16,
+            zIndex: 999,
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: "rgba(255, 255, 255, 0.22)",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Icon name="arrow-back" type={IconType.Ionicons} size={24} color="white" />
+        </TouchableOpacity>
+
+        <View>
+          <ImageBackground
+            style={{
+              backgroundColor: "#1e3830",
+              paddingTop: 80,
+              paddingBottom: 30,
+              position: "absolute",
+              top: -50,
+              width: ScreenWidth,
+              height: ScreenHeight * 0.5,
+              left: 0,
+              right: 0,
+            }}
+            source={require("../../../../assets/camera/loginbackground.png")}
+          >
+            {renderHeader()}
+          </ImageBackground>
+
+          <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+            <View
+              style={{
+                backgroundColor: "white",
+                zIndex: 99,
+                width: ScreenWidth,
+                marginTop: ScreenWidth * 0.6,
+                borderRadius: 25,
+                paddingRight: 10,
+                paddingLeft: 10,
+                paddingBottom: 20,
+              }}
+            >
+              {/* ---------------- Search Bar ---------------- */}
+              <View
+                style={{
+                  width: "100%",
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  marginTop: 20,
+                }}
+              >
+                <TextInput
+                  style={{
+                    marginBottom: 25,
+                    backgroundColor: "#1e3830",
+                    minWidth: ScreenWidth * 0.6,
+                    width: ScreenWidth * 0.85,
+                    height: 43,
+                    paddingRight: 45,
+                    paddingLeft: 20,
+                    color: "white",
+                    borderRadius: 50,
+                    elevation: 5,
+                  }}
+                  placeholder="Search..."
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholderTextColor={"#ccc"}
+                  autoCapitalize="none"
+                />
+                <View style={{ position: "absolute", top: 15, right: 50 }}>
+                  <Image
+                    style={{ width: 18, height: 18 }}
+                    source={require("../../../assets/images/camera/searchbutton.png")}
+                  />
+                </View>
+              </View>
+
+              {/* ---------------- Your Attendance ---------------- */}
+              <View
+                style={{
+                  display: "flex",
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  color="black"
+                  style={{ fontSize: 17, margin: 10, color: "black", fontWeight: "bold" }}
+                >
+                  Your Attendance
+                </Text>
+              </View>
+              <View
+                style={{
+                  backgroundColor: "#F9FFFC",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  elevation: 2,
+                  borderRadius: 10,
+                  margin: 10,
+                  height: 80,
+                  paddingLeft: 15,
+                  borderLeftColor: borderColors[2 % borderColors.length],
+                  borderLeftWidth: 10,
+                  paddingRight: 15,
+                  paddingVertical: 10,
+                  marginBottom: 25,
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 20 }}>
+                    <Image
+                      style={{ width: 50, height: 50, borderRadius: 50, marginRight: 8 }}
+                      source={{ uri: imagesource ? imagesource : parseData["data"]?.image ? parseData["data"]?.image : profileURI }}
+                    />
+                    <View>
+                      <Text
+                        color="black"
+                        style={{ textTransform: "capitalize", fontWeight: "bold", fontSize: 14 }}
+                      >
+                        {name ? name : fullname}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    onPressIn={() => {
+                      NavigationService.navigationRef.current?.dispatch(
+                        StackActions.push("attendanceclient", {
+                          clientId: own_client_id,
+                          userId: userid,
+                          name: fullname,
+                        })
+                      );
+                    }}
+                    style={{
+                      backgroundColor: borderColors[2 % borderColors.length],
+                      padding: 5,
+                      borderRadius: 50,
+                    }}
+                  >
+                    <Image
+                      style={{ width: 20, height: 20 }}
+                      source={require("../../../assets/images/camera/next.png")}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* ---------------- Alloted Team Header ---------------- */}
+              <View
+                style={{
+                  display: "flex",
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginHorizontal: 10,
+                  marginBottom: 12,
+                }}
+              >
+                <Text color="black" style={{ fontSize: 17, color: "black", fontWeight: "bold" }}>
+                  Alloted Team
+                </Text>
+                {teamData.length > 0 && (
+                  <View
+                    style={{
+                      backgroundColor: "#E8F4EE",
+                      paddingHorizontal: 10,
+                      paddingVertical: 4,
+                      borderRadius: 12,
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#1e3830" }}>
+                      {filteredData.length} {filteredData.length === 1 ? "Employee" : "Employees"}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* ---------------- Summary (Total / Present / Absent) ---------------- */}
+              {!loading && !error && teamData.length > 0 && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    gap: 8,
+                    marginHorizontal: 10,
+                    marginBottom: 16,
+                  }}
+                >
+                  <View
+                    style={{
+                      flex: 1,
+                      alignItems: "center",
+                      backgroundColor: "#F1F5F9",
+                      borderColor: "#CBD5E1",
+                      borderWidth: 1,
+                      borderRadius: 10,
+                      paddingVertical: 8,
+                    }}
+                  >
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: "#0F172A" }}>{summary.total}</Text>
+                    <Text style={{ fontSize: 11, fontWeight: "600", color: "#475569" }}>Total</Text>
+                  </View>
+                  <View
+                    style={{
+                      flex: 1,
+                      alignItems: "center",
+                      backgroundColor: "#ECFDF5",
+                      borderColor: "#A7F3D0",
+                      borderWidth: 1,
+                      borderRadius: 10,
+                      paddingVertical: 8,
+                    }}
+                  >
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: "#065F46" }}>{summary.present}</Text>
+                    <Text style={{ fontSize: 11, fontWeight: "600", color: "#047857" }}>Present</Text>
+                  </View>
+                  <View
+                    style={{
+                      flex: 1,
+                      alignItems: "center",
+                      backgroundColor: "#FEF2F2",
+                      borderColor: "#FECACA",
+                      borderWidth: 1,
+                      borderRadius: 10,
+                      paddingVertical: 8,
+                    }}
+                  >
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: "#991B1B" }}>{summary.absent}</Text>
+                    <Text style={{ fontSize: 11, fontWeight: "600", color: "#B91C1C" }}>Absent</Text>
+                  </View>
+                </View>
+              )}
+
+              {/* ---------------- Employee List ---------------- */}
+              {loading ? (
+                <View style={{ paddingVertical: 40, alignItems: "center" }}>
+                  <ActivityIndicator size="large" color="#1e3830" />
+                  <Text color="#1e3830" style={{ marginTop: 10, fontSize: 13 }}>
+                    Loading team...
+                  </Text>
+                </View>
+              ) : error ? (
+                <View style={{ paddingVertical: 30, alignItems: "center", paddingHorizontal: 20 }}>
+                  <Text color="#B91C1C" style={{ fontSize: 14, textAlign: "center" }}>
+                    {error}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setLoading(true);
+                      fetchTeamData();
+                    }}
+                    style={{
+                      marginTop: 12,
+                      backgroundColor: "#1e3830",
+                      paddingHorizontal: 20,
+                      paddingVertical: 8,
+                      borderRadius: 20,
+                    }}
+                  >
+                    <Text color="white" style={{ fontSize: 13, fontWeight: "600" }}>
+                      Retry
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : filteredData.length === 0 ? (
+                <View style={{ paddingVertical: 30, alignItems: "center" }}>
+                  <Text color="#999" style={{ fontSize: 14 }}>
+                    No employees found.
+                  </Text>
+                </View>
+              ) : (
+                filteredData.map((member: any, index: number) => {
+                  const rawName = (member.name || "").trim();
+                  const isPresent = member.status === "present";
+                  const statusColor = isPresent ? "#10B981" : "#EF4444";
+                  const statusBg = isPresent ? "#ECFDF5" : "#FEF2F2";
+                  const statusBorder = isPresent ? "#A7F3D0" : "#FECACA";
+                  const statusText = isPresent ? "#047857" : "#B91C1C";
+
+                  return (
+                    <TouchableOpacity
+                      key={member.id}
+                      activeOpacity={0.75}
+                      onPress={() => {
+                        console.log("Member pressed:", member.id, member.name, member.client_id);
+                        handleMemberPress(member)
+
+                      }
+
+                      }
+
+                      style={{
+                        backgroundColor: "#FFFFFF",
+                        borderRadius: 12,
+                        marginHorizontal: 10,
+                        borderLeftColor: borderColors[index % borderColors.length],
+                        borderLeftWidth: 6,
+                        paddingHorizontal: 14,
+                        paddingVertical: 12,
+                        marginBottom: 14,
+                        elevation: 2,
+                        shadowColor: "#000",
+                        shadowOpacity: 0.06,
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowRadius: 4,
+                      }}
+                    >
+                      {/* Top: Avatar, Name, Status Badge */}
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1, marginRight: 10 }}>
+                          <Image
+                            style={{
+                              width: 44,
+                              height: 44,
+                              borderRadius: 22,
+                              backgroundColor: "#F0F4F2",
+                            }}
+                            source={{ uri: defaultAvatar }}
+                          />
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              color="#1e3830"
+                              style={{
+                                textTransform: "capitalize",
+                                fontWeight: "700",
+                                fontSize: 15,
+                                color: "#1e3830",
+                                lineHeight: 20,
+                              }}
+                              numberOfLines={1}
+                            >
+                              {rawName}
+                            </Text>
+                            {!!member.user_regcode && (
+                              <Text color="#64748B" style={{ fontSize: 11, color: "#64748B" }} numberOfLines={1}>
+                                {member.user_regcode}
+                                {member.designation ? `  •  ${member.designation}` : ""}
+                              </Text>
+                            )}
+                          </View>
+                        </View>
+
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 5,
+                            backgroundColor: statusBg,
+                            borderColor: statusBorder,
+                            borderWidth: 0.5,
+                            paddingHorizontal: 10,
+                            paddingVertical: 4,
+                            borderRadius: 12,
+                          }}
+                        >
+                          <View
+                            style={{
+                              width: 7,
+                              height: 7,
+                              borderRadius: 4,
+                              backgroundColor: statusColor,
+                            }}
+                          />
+                          <Text
+                            color={statusText}
+                            style={{
+                              fontSize: 11,
+                              fontWeight: "700",
+                              color: statusText,
+                              textTransform: "capitalize",
+                            }}
+                          >
+                            {member.status || "absent"}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Divider */}
+                      <View
+                        style={{
+                          height: 1,
+                          backgroundColor: "#F0F3F2",
+                          marginVertical: 10,
+                        }}
+                      />
+
+                      {/* Bottom Row: Punch In / Punch Out */}
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 8,
+                        }}
+                      >
+                        <View
+                          style={{
+                            flex: 1,
+                            flexDirection: "row",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backgroundColor: "#ffffff",
+                            borderColor: "#A7F3D0",
+                            borderWidth: 0.5,
+                            paddingVertical: 6,
+                            paddingHorizontal: 4,
+                            borderRadius: 8,
+                            gap: 5,
+                          }}
+                        >
+                          <View
+                            style={{
+                              width: 7,
+                              height: 7,
+                              borderRadius: 4,
+                              backgroundColor: "#10B981",
+                            }}
+                          />
+                          <Text color="#047857" style={{ fontSize: 11, fontWeight: "600", color: "#047857" }}>
+                            In:
+                          </Text>
+                          <Text color="#065F46" style={{ fontSize: 12, fontWeight: "800", color: "#065F46" }}>
+                            {formatPunchTime(member.punch_in)}
+                          </Text>
+                        </View>
+
+                        <View
+                          style={{
+                            flex: 1,
+                            flexDirection: "row",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backgroundColor: "#ffffff",
+                            borderColor: "#FECACA",
+                            borderWidth: 0.5,
+                            paddingVertical: 6,
+                            paddingHorizontal: 4,
+                            borderRadius: 8,
+                            gap: 5,
+                          }}
+                        >
+                          <View
+                            style={{
+                              width: 7,
+                              height: 7,
+                              borderRadius: 4,
+                              backgroundColor: "#EF4444",
+                            }}
+                          />
+                          <Text color="#B91C1C" style={{ fontSize: 11, fontWeight: "600", color: "#B91C1C" }}>
+                            Out:
+                          </Text>
+                          <Text color="#991B1B" style={{ fontSize: 12, fontWeight: "800", color: "#991B1B" }}>
+                            {formatPunchTime(member.punch_out)}
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </View>
+          </ScrollView>
+        </View>
+      </SafeAreaView>
+    </>
+  );
+};
+
+export default Allotedteam;

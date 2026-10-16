@@ -1394,7 +1394,7 @@ const s = StyleSheet.create({
   listHeader: {
     backgroundColor: C.primary,
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 0 : 16,
+    paddingTop: Platform.OS === 'ios' ? 26 : 16,
     paddingBottom: 0,
   },
   backBtnHeader: { paddingTop: 25, paddingBottom: 6 },

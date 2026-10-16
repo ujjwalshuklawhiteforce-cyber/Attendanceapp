@@ -856,10 +856,10 @@ const s = StyleSheet.create({
     listHeader: {
         backgroundColor: C.primary,
         paddingHorizontal: 20,
-        paddingTop: Platform.OS === 'ios' ? 0 : 16,
+        paddingTop: Platform.OS === 'ios' ? 16 : 16,
         paddingBottom: 0,
     },
-    backBtnHeader: { paddingTop: 25, paddingBottom: 6 },
+    backBtnHeader: { paddingTop: 35, paddingBottom: 6 },
     listHeaderTop: {
         flexDirection: 'row',
         alignItems: 'center',

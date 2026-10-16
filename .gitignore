@@ -1,80 +1,128 @@
-# ===================================
-# React Native - .gitignore
-# System transfer ke liye optimized
-# ===================================
+# ==============================================================================
+# White Force Attendance App - .gitignore
+# Complete Production Grade Git Ignore (React Native, Android, iOS, Keys & Secrets)
+# ==============================================================================
 
-# -----------------------------------------------
-# NODE
-# -----------------------------------------------
+# ------------------------------------------------------------------------------
+# 1. ROOT & GENERAL BUILD DIRECTORIES
+# ------------------------------------------------------------------------------
+build/
+DerivedData/
+dist/
+out/
+.cache/
+
+# ------------------------------------------------------------------------------
+# 2. SENSITIVE CREDENTIALS, KEYS & CERTIFICATES (NEVER COMMIT)
+# ------------------------------------------------------------------------------
+# Keystores & Java Signing Keys
+*.keystore
+*.jks
+*.p12
+*.p8
+*.key
+*.pem
+*.cer
+*.crt
+*.der
+*.mobileprovision
+
+# Secret properties files
+key.properties
+android/key.properties
+local.properties
+android/local.properties
+android/gradle.properties.local
+
+# Environment variables
+.env
+.env.*
+*.env
+!.env.example
+
+# Google & Firebase Services Credentials
+google-services.json
+android/app/google-services.json
+GoogleService-Info.plist
+ios/GoogleService-Info.plist
+firebase-debug.log
+*-credentials.json
+
+# ------------------------------------------------------------------------------
+# 3. NODE & DEPENDENCIES
+# ------------------------------------------------------------------------------
 node_modules/
-npm-debug.log
-yarn-error.log
-yarn-debug.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+lerna-debug.log*
 
-# -----------------------------------------------
-# REACT NATIVE / METRO
-# -----------------------------------------------
+# ------------------------------------------------------------------------------
+# 4. REACT NATIVE & METRO BUNDLER
+# ------------------------------------------------------------------------------
 .metro-health-check*
 .react-native-cache/
+metro-cache/
+.bundle/
 
-# -----------------------------------------------
-# ANDROID BUILD & GENERATED FILES
-# -----------------------------------------------
+# ------------------------------------------------------------------------------
+# 5. ANDROID BUILDS & GENERATED ARTIFACTS
+# ------------------------------------------------------------------------------
 android/build/
 android/app/build/
 android/.gradle/
 android/.idea/
-android/local.properties
+android/captures/
 android/app/release/
 android/app/debug/
-android/captures/
+android/full-deps.txt
 
-# JVM Crash Logs (Gradle/Java se generate hote hain - zaruri nahi)
+# Generated APK & AAB bundles
+*.apk
+*.aab
+*.ap_
+
+# JVM Crash Logs
 hs_err_pid*.log
 replay_pid*.log
 android/hs_err_pid*.log
 android/replay_pid*.log
 
-# Android generated dependency file
-android/full-deps.txt
-
-# -----------------------------------------------
-# IOS BUILD & GENERATED FILES
-# -----------------------------------------------
+# ------------------------------------------------------------------------------
+# 6. IOS BUILDS & XCODE ARTIFACTS
+# ------------------------------------------------------------------------------
 ios/build/
 ios/Pods/
+ios/DerivedData/
 ios/*.xcworkspace/xcuserdata/
 ios/*.xcodeproj/xcuserdata/
 ios/*.xcodeproj/project.xcworkspace/xcuserdata/
-ios/DerivedData/
+ios/*.xcworkspace/project.xcworkspace/xcuserdata/
+ios/*.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
+ios/.xcode.env.local
 ios/Podfile.lock
+*.dSYM/
+*.dSYM.zip
+*.ipa
 
-# -----------------------------------------------
-# ENVIRONMENT & SECRETS (Kabhi commit mat karo!)
-# -----------------------------------------------
-.env
-.env.local
-.env.development
-.env.production
-.env.staging
-*.keystore
-*.jks
-android/app/google-services.json
-ios/GoogleService-Info.plist
-
-# -----------------------------------------------
-# EDITOR / IDE FILES
-# -----------------------------------------------
-.vscode/settings.json
-.vscode/launch.json
+# ------------------------------------------------------------------------------
+# 7. IDE, EDITORS & WORKSPACE SETTINGS
+# ------------------------------------------------------------------------------
+.vscode/
 .idea/
 *.iml
 *.ipr
 *.iws
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
 
-# -----------------------------------------------
-# OS GENERATED
-# -----------------------------------------------
+# ------------------------------------------------------------------------------
+# 8. OS GENERATED FILES (macOS, Windows, Linux)
+# ------------------------------------------------------------------------------
 .DS_Store
 .DS_Store?
 ._*
@@ -83,28 +131,21 @@ ios/GoogleService-Info.plist
 ehthumbs.db
 Thumbs.db
 desktop.ini
+__MACOSX/
 
-# -----------------------------------------------
-# LOGS & TEMP FILES
-# -----------------------------------------------
+# ------------------------------------------------------------------------------
+# 9. LOGS, CACHE & TEMPORARY FILES
+# ------------------------------------------------------------------------------
 *.log
 *.tmp
 *.temp
 *.bak
 *.orig
-
-# -----------------------------------------------
-# TEST COVERAGE
-# -----------------------------------------------
 coverage/
 .nyc_output/
 
-# -----------------------------------------------
-# VENDOR (Ruby gems - iOS ke liye)
-# -----------------------------------------------
+# ------------------------------------------------------------------------------
+# 10. RUBY / BUNDLER (iOS Pods Management)
+# ------------------------------------------------------------------------------
 vendor/bundle/
-
-# -----------------------------------------------
-# MACOS ARTIFACTS
-# -----------------------------------------------
-__MACOSX/
+.vendor/

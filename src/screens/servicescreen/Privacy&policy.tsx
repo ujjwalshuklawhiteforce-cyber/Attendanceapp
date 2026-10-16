@@ -8,10 +8,8 @@ import { TouchableOpacity } from 'react-native-gesture-handler';
 const PrivacyandPolicy = ({ navigation }) => {
   return (
     <View style={styles.container}>
-       
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-      <View style={{ top:5, left:10}}>
-     <TouchableOpacity  onPress={() => navigation.goBack()} style={{padding:5,}}>
+       <View style={{   borderBottomWidth:1, borderBottomColor:"#EBEBEB", paddingTop:46, display:"flex", flexDirection:"row", alignItems:"center", gap:60 ,}}>
+     <TouchableOpacity  onPress={() => navigation.goBack()} style={{padding:10, marginLeft: 10, backgroundColor:"#EBEBEB" , borderRadius:5} }>
      <Icon 
           name="chevron-back-outline"
           type={IconType.Ionicons}
@@ -20,9 +18,12 @@ const PrivacyandPolicy = ({ navigation }) => {
           style={styles.addIcon}
         />
      </TouchableOpacity>
+             <Text style={styles.title}>Terms<Text style={{color:"green"}} > & </Text>Conditions</Text>
+
       </View>
-        <Text style={styles.title}>Terms<Text style={{color:"green"}} > & </Text>Conditions</Text>
         
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      
         <Text style={styles.paragraph}>
           Welcome to our HR Attendance App. By using this application, you agree to the following terms and conditions. Please read them carefully.
         </Text>
@@ -60,12 +61,12 @@ const PrivacyandPolicy = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+   
     backgroundColor: '#FAFAFA',
   },
   scrollContainer: {
-    paddingBottom: 20,
-    marginTop:30
+     padding: 20,
+    
   },
   title: {
     fontSize: 22,

@@ -60,7 +60,7 @@ const AdminHomeScreen: React.FC = () => {
     setIsOpen(open);
   };
   const handleNavigateToTermss = () => {
-    NavigationService.navigationRef.current?.dispatch(StackActions.push('attendanceclient'));
+    NavigationService.navigationRef.current?.dispatch(StackActions.push('allotedteam'));
   };
   const fetchTeamData = async () => {
     const currentDate = new Date().toISOString().split('T')[0];
